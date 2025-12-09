@@ -82,6 +82,13 @@ class ObjectTreeTraverser {
           const uint32_t ref_object_number = GetObjectNumber(ref_object);
           const uint32_t referenced_object_number = ref_object->GetRefObjNum();
 
+          // ===== DEBUG START =====
+          fprintf(stderr, "[DEBUG Traversal] Found REFERENCE: from_objnum=%u -> to_objnum=%u\n",
+                  ref_object_number, referenced_object_number);
+          fprintf(stderr, "[DEBUG Traversal]   HasIndirectObjectHolder: %s\n",
+                  ref_object->HasIndirectObjectHolder() ? "YES" : "NO");
+          // ===== DEBUG END =====
+
           RetainPtr<const CPDF_Object> referenced_object;
           if (ref_object->HasIndirectObjectHolder()) {
             // Calling GetIndirectObject() does not work for normal references.
@@ -91,6 +98,13 @@ class ObjectTreeTraverser {
             referenced_object =
                 document_->GetIndirectObject(referenced_object_number);
           }
+
+          // ===== DEBUG START =====
+          fprintf(stderr, "[DEBUG Traversal]   Resolved to: %s (type=%d)\n",
+                  referenced_object ? "SUCCESS" : "FAILED/NULL",
+                  referenced_object ? static_cast<int>(referenced_object->GetType()) : -1);
+          // ===== DEBUG END =====
+
           // Unlike the other object types, CPDF_Reference can point at nullptr.
           if (referenced_object) {
             CHECK(referenced_object_number);
@@ -98,6 +112,12 @@ class ObjectTreeTraverser {
                 {ref_object_number, referenced_object_number});
             PushNewObject(ref_object, referenced_object);
           }
+          // ===== DEBUG START =====
+          else {
+            fprintf(stderr, "[DEBUG Traversal] WARNING: Reference to %u could not be resolved!\n",
+                    referenced_object_number);
+          }
+          // ===== DEBUG END =====
           break;
         }
         case CPDF_Object::kStream: {
@@ -148,6 +168,28 @@ class ObjectTreeTraverser {
     CHECK(parent_object);
     CHECK(child_object);
     const bool inserted = seen_objects_.insert(child_object).second;
+
+    // ===== DEBUG START =====
+    if (child_object->GetType() == CPDF_Object::kDictionary) {
+      // Check if this is an annotation dict (has /Subtype)
+      const CPDF_Dictionary* dict = child_object->AsDictionary();
+      ByteString subtype = dict->GetByteStringFor("Subtype");
+      if (!subtype.IsEmpty()) {
+        fprintf(stderr, "[DEBUG Traversal] PushNewObject: Dict with Subtype=%s, objnum=%u, inserted=%s\n",
+                subtype.c_str(), child_object->GetObjNum(), inserted ? "YES" : "NO (already seen)");
+      }
+      // Check if this has /AP key
+      if (dict->KeyExist("AP")) {
+        fprintf(stderr, "[DEBUG Traversal] PushNewObject: Dict HAS /AP key! objnum=%u\n",
+                child_object->GetObjNum());
+      }
+    }
+    if (child_object->GetType() == CPDF_Object::kStream) {
+      fprintf(stderr, "[DEBUG Traversal] PushNewObject: Stream objnum=%u, inserted=%s\n",
+              child_object->GetObjNum(), inserted ? "YES" : "NO (already seen)");
+    }
+    // ===== DEBUG END =====
+
     if (!inserted) {
       return;
     }
