@@ -447,29 +447,8 @@ FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV FPDFPage_GetAnnot(FPDF_PAGE page,
     return nullptr;
   }
 
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG FPDFPage_GetAnnot] Getting annotation at index %d\n", index);
-  RetainPtr<CPDF_Object> rawObj = pAnnots->GetMutableObjectAt(index);
-  fprintf(stderr, "[DEBUG FPDFPage_GetAnnot] Raw object type: %d, objnum: %u\n",
-          rawObj ? static_cast<int>(rawObj->GetType()) : -1,
-          rawObj ? rawObj->GetObjNum() : 0);
-  if (rawObj && rawObj->IsReference()) {
-    fprintf(stderr, "[DEBUG FPDFPage_GetAnnot] Is REFERENCE to objnum: %u\n",
-            rawObj->AsReference()->GetRefObjNum());
-  }
-  // ===== DEBUG END =====
-
   RetainPtr<CPDF_Dictionary> dict =
       ToDictionary(pAnnots->GetMutableDirectObjectAt(index));
-
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG FPDFPage_GetAnnot] Direct dict objnum: %u (0 = inline/direct)\n",
-          dict ? dict->GetObjNum() : 0);
-  if (dict) {
-    ByteString subtype = dict->GetByteStringFor("Subtype");
-    fprintf(stderr, "[DEBUG FPDFPage_GetAnnot] Dict Subtype: %s\n", subtype.c_str());
-  }
-  // ===== DEBUG END =====
 
   if (!dict) {
     return nullptr;
@@ -1243,6 +1222,15 @@ FPDFAnnot_SetAP(FPDF_ANNOTATION annot,
     return false;
   }
 
+  // If the annotation is a direct object, convert it to an indirect object.
+  // This ensures that any changes to the annotation (like adding an AP stream)
+  // are properly serialized. If it remains direct, the AP stream reference
+  // might not be reachable or serialized correctly in some cases (e.g.
+  // FPDF_NO_INCREMENTAL save).
+  if (pAnnotDict->GetObjNum() == 0) {
+    doc->AddIndirectObject(pAnnotDict);
+  }
+
   auto stream_dict = pdfium::MakeRetain<CPDF_Dictionary>();
   stream_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kType, "XObject");
   stream_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kSubtype, "Form");
@@ -1266,37 +1254,6 @@ FPDFAnnot_SetAP(FPDF_ANNOTATION annot,
     ap_dict = pAnnotDict->SetNewFor<CPDF_Dictionary>(pdfium::annotation::kAP);
   }
   ap_dict->SetNewFor<CPDF_Reference>(mode_key, doc, new_stream->GetObjNum());
-
-  // ===== DEBUG START =====
-  {
-    uint32_t stream_objnum = new_stream->GetObjNum();
-    uint32_t annot_objnum = pAnnotDict->GetObjNum();
-
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] Stream created with objnum: %u\n", stream_objnum);
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] Annotation dict objnum: %u (0 = direct/inline)\n", annot_objnum);
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] AP dict objnum: %u\n", ap_dict->GetObjNum());
-
-    // Verify stream is in document
-    auto verify_stream = doc->GetIndirectObject(stream_objnum);
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] Stream in document->indirect_objs_: %s\n",
-            verify_stream ? "YES" : "NO");
-
-    // Verify AP dict has the reference
-    auto verify_ref = ap_dict->GetObjectFor(mode_key);
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] AP dict has '%s' key: %s (type=%d)\n",
-            mode_key, verify_ref ? "YES" : "NO",
-            verify_ref ? static_cast<int>(verify_ref->GetType()) : -1);
-
-    if (verify_ref && verify_ref->IsReference()) {
-      fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] Reference points to objnum: %u\n",
-              verify_ref->AsReference()->GetRefObjNum());
-    }
-
-    // Print document's last object number
-    fprintf(stderr, "[DEBUG FPDFAnnot_SetAP] Document last_obj_num_: %u\n",
-            doc->GetLastObjNum());
-  }
-  // ===== DEBUG END =====
 
   return true;
 }

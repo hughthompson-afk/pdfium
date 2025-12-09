@@ -7,11 +7,17 @@
 #include "public/fpdfview.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "build/build_config.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include <android/log.h>
+#endif
+
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_occontext.h"
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -239,6 +245,13 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* config) {
   if (g_bLibraryInitialized) {
     return;
   }
+
+#if BUILDFLAG(IS_ANDROID)
+  __android_log_print(ANDROID_LOG_INFO, "PDFium", "PDFium Custom Fork Initialized");
+#elif BUILDFLAG(IS_WIN)
+  OutputDebugStringA("PDFium Custom Fork Initialized\n");
+#endif
+  fprintf(stderr, "PDFium Custom Fork Initialized\n");
 
   FX_InitializeMemoryAllocators();
   CFX_Timer::InitializeGlobals();

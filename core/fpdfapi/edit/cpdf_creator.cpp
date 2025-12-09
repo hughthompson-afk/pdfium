@@ -173,10 +173,6 @@ bool CPDF_Creator::WriteOldIndirectObject(uint32_t objnum) {
 bool CPDF_Creator::WriteOldObjs() {
   const uint32_t nLastObjNum = parser_->GetLastObjNum();
 
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG WriteOldObjs] Parser last obj num: %u\n", nLastObjNum);
-  // ===== DEBUG END =====
-
   if (!parser_->IsValidObjectNumber(nLastObjNum)) {
     return true;
   }
@@ -186,21 +182,6 @@ bool CPDF_Creator::WriteOldObjs() {
 
   const std::set<uint32_t> objects_with_refs =
       GetObjectsWithReferences(document_);
-
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG WriteOldObjs] GetObjectsWithReferences returned %zu objects\n",
-          objects_with_refs.size());
-  // Print all object numbers (limit output)
-  int count = 0;
-  for (uint32_t objnum : objects_with_refs) {
-    if (count++ < 50) {  // Limit output
-      fprintf(stderr, "[DEBUG WriteOldObjs]   Reachable: %u\n", objnum);
-    }
-  }
-  if (count >= 50) {
-    fprintf(stderr, "[DEBUG WriteOldObjs]   ... and %d more\n", count - 50);
-  }
-  // ===== DEBUG END =====
 
   uint32_t last_object_number_written = 0;
   for (uint32_t objnum = cur_obj_num_; objnum <= nLastObjNum; ++objnum) {
@@ -221,19 +202,9 @@ bool CPDF_Creator::WriteOldObjs() {
 }
 
 bool CPDF_Creator::WriteNewObjs() {
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG WriteNewObjs] Writing %zu new objects\n", new_obj_num_array_.size());
-  // ===== DEBUG END =====
-
   for (size_t i = cur_obj_num_; i < new_obj_num_array_.size(); ++i) {
     uint32_t objnum = new_obj_num_array_[i];
     RetainPtr<const CPDF_Object> pObj = document_->GetIndirectObject(objnum);
-
-    // ===== DEBUG START =====
-    fprintf(stderr, "[DEBUG WriteNewObjs] Object %u: %s (type=%d)\n",
-            objnum, pObj ? "FOUND" : "NOT FOUND",
-            pObj ? static_cast<int>(pObj->GetType()) : -1);
-    // ===== DEBUG END =====
 
     if (!pObj) {
       continue;
@@ -243,64 +214,26 @@ bool CPDF_Creator::WriteNewObjs() {
     if (!WriteIndirectObj(pObj->GetObjNum(), pObj.Get())) {
       return false;
     }
-
-    // ===== DEBUG START =====
-    fprintf(stderr, "[DEBUG WriteNewObjs] Successfully wrote object %u\n", objnum);
-    // ===== DEBUG END =====
   }
   return true;
 }
 
 void CPDF_Creator::InitNewObjNumOffsets() {
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Starting. is_incremental_=%d, has_parser=%d\n",
-          is_incremental_, parser_ != nullptr);
-  if (parser_) {
-    fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Parser last obj num: %u\n",
-            parser_->GetLastObjNum());
-  }
-  fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Document has %zu indirect objects\n",
-          static_cast<size_t>(std::distance(document_->begin(), document_->end())));
-  // ===== DEBUG END =====
-
   for (const auto& pair : *document_) {
     const uint32_t objnum = pair.first;
 
-    // ===== DEBUG START =====
-    fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Checking objnum %u: stored_objnum=%u, type=%d\n",
-            objnum, pair.second->GetObjNum(), static_cast<int>(pair.second->GetType()));
-    // ===== DEBUG END =====
-
     if (pair.second->GetObjNum() == CPDF_Object::kInvalidObjNum) {
-      // ===== DEBUG START =====
-      fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Skipping %u: kInvalidObjNum\n", objnum);
-      // ===== DEBUG END =====
       continue;
     }
 
     if (!is_incremental_ && parser_ && parser_->IsValidObjectNumber(objnum) &&
         !parser_->IsObjectFree(objnum)) {
-      // ===== DEBUG START =====
-      fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Skipping %u: exists in original file\n", objnum);
-      // ===== DEBUG END =====
       continue;
     }
-
-    // ===== DEBUG START =====
-    fprintf(stderr, "[DEBUG InitNewObjNumOffsets] ADDING %u to new_obj_num_array_\n", objnum);
-    // ===== DEBUG END =====
 
     new_obj_num_array_.insert(
         std::ranges::lower_bound(new_obj_num_array_, objnum), objnum);
   }
-
-  // ===== DEBUG START =====
-  fprintf(stderr, "[DEBUG InitNewObjNumOffsets] Complete. new_obj_num_array_ has %zu entries\n",
-          new_obj_num_array_.size());
-  for (uint32_t objnum : new_obj_num_array_) {
-    fprintf(stderr, "[DEBUG InitNewObjNumOffsets]   - objnum %u\n", objnum);
-  }
-  // ===== DEBUG END =====
 }
 
 CPDF_Creator::Stage CPDF_Creator::WriteDoc_Stage1() {
