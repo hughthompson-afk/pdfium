@@ -1710,6 +1710,232 @@ TEST_F(FPDFAnnotEmbedderTest, GetNumberValue) {
   }
 }
 
+TEST_F(FPDFAnnotEmbedderTest, GetSetBSWidth) {
+  // Create a new document with a line annotation.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Create a line annotation.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    ASSERT_TRUE(annot);
+
+    // Initially, /BS dictionary doesn't exist, so GetBSWidth should fail.
+    float width = 0.0f;
+    EXPECT_FALSE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+
+    // Set a width value.
+    EXPECT_TRUE(FPDFAnnot_SetBSWidth(annot.get(), 2.5f));
+
+    // Now GetBSWidth should succeed.
+    EXPECT_TRUE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+    EXPECT_FLOAT_EQ(2.5f, width);
+
+    // Test invalid inputs.
+    EXPECT_FALSE(FPDFAnnot_GetBSWidth(nullptr, &width));
+    EXPECT_FALSE(FPDFAnnot_GetBSWidth(annot.get(), nullptr));
+    EXPECT_FALSE(FPDFAnnot_SetBSWidth(nullptr, 1.0f));
+    EXPECT_FALSE(FPDFAnnot_SetBSWidth(annot.get(), -1.0f));
+
+    // Test setting a different width.
+    EXPECT_TRUE(FPDFAnnot_SetBSWidth(annot.get(), 3.0f));
+    EXPECT_TRUE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+    EXPECT_FLOAT_EQ(3.0f, width);
+  }
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetSetBSStyle) {
+  // Create a new document with a line annotation.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Create a line annotation.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    ASSERT_TRUE(annot);
+
+    // Initially, /BS dictionary doesn't exist, so GetBSStyle should return
+    // empty string.
+    char buffer[10] = {0};
+    unsigned long length = FPDFAnnot_GetBSStyle(annot.get(), buffer, 10);
+    EXPECT_EQ(1u, length);  // Just null terminator
+    EXPECT_STREQ("", buffer);
+
+    // Test with null buffer to get length.
+    length = FPDFAnnot_GetBSStyle(annot.get(), nullptr, 0);
+    EXPECT_EQ(1u, length);
+
+    // Set a valid style.
+    EXPECT_TRUE(FPDFAnnot_SetBSStyle(annot.get(), "S"));
+    length = FPDFAnnot_GetBSStyle(annot.get(), buffer, 10);
+    EXPECT_EQ(2u, length);  // "S" + null terminator
+    EXPECT_STREQ("S", buffer);
+
+    // Test all valid styles.
+    const char* valid_styles[] = {"S", "D", "B", "I", "U"};
+    for (const char* style : valid_styles) {
+      EXPECT_TRUE(FPDFAnnot_SetBSStyle(annot.get(), style));
+      length = FPDFAnnot_GetBSStyle(annot.get(), buffer, 10);
+      EXPECT_EQ(2u, length);
+      EXPECT_STREQ(style, buffer);
+    }
+
+    // Test invalid inputs.
+    EXPECT_FALSE(FPDFAnnot_SetBSStyle(nullptr, "S"));
+    EXPECT_FALSE(FPDFAnnot_SetBSStyle(annot.get(), nullptr));
+    EXPECT_FALSE(FPDFAnnot_SetBSStyle(annot.get(), "X"));  // Invalid style
+    EXPECT_FALSE(FPDFAnnot_SetBSStyle(annot.get(), "SS"));  // Invalid style
+    EXPECT_FALSE(FPDFAnnot_SetBSStyle(annot.get(), ""));    // Empty string
+
+    // Test buffer too small.
+    char small_buffer[2] = {0};
+    length = FPDFAnnot_GetBSStyle(annot.get(), small_buffer, 2);
+    EXPECT_EQ(2u, length);  // Still returns full length
+    EXPECT_STREQ("U", small_buffer);  // Should have copied what fits
+  }
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetSetBSDash) {
+  // Create a new document with a line annotation.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Create a line annotation.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    ASSERT_TRUE(annot);
+
+    // Initially, /BS dictionary doesn't exist, so GetBSDash should fail.
+    float dash = 0.0f, gap = 0.0f, phase = 0.0f;
+    EXPECT_FALSE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, &phase));
+
+    // Set dash pattern values.
+    EXPECT_TRUE(FPDFAnnot_SetBSDash(annot.get(), 3.0f, 2.0f, 1.0f));
+
+    // Now GetBSDash should succeed.
+    EXPECT_TRUE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, &phase));
+    EXPECT_FLOAT_EQ(3.0f, dash);
+    EXPECT_FLOAT_EQ(2.0f, gap);
+    EXPECT_FLOAT_EQ(1.0f, phase);
+
+    // Test invalid inputs.
+    EXPECT_FALSE(FPDFAnnot_GetBSDash(nullptr, &dash, &gap, &phase));
+    EXPECT_FALSE(FPDFAnnot_GetBSDash(annot.get(), nullptr, &gap, &phase));
+    EXPECT_FALSE(FPDFAnnot_GetBSDash(annot.get(), &dash, nullptr, &phase));
+    EXPECT_FALSE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, nullptr));
+    EXPECT_FALSE(FPDFAnnot_SetBSDash(nullptr, 1.0f, 1.0f, 1.0f));
+    EXPECT_FALSE(FPDFAnnot_SetBSDash(annot.get(), -1.0f, 1.0f, 1.0f));
+    EXPECT_FALSE(FPDFAnnot_SetBSDash(annot.get(), 1.0f, -1.0f, 1.0f));
+    EXPECT_FALSE(FPDFAnnot_SetBSDash(annot.get(), 1.0f, 1.0f, -1.0f));
+
+    // Test setting different values.
+    EXPECT_TRUE(FPDFAnnot_SetBSDash(annot.get(), 5.0f, 3.0f, 2.0f));
+    EXPECT_TRUE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, &phase));
+    EXPECT_FLOAT_EQ(5.0f, dash);
+    EXPECT_FLOAT_EQ(3.0f, gap);
+    EXPECT_FLOAT_EQ(2.0f, phase);
+  }
+}
+
+TEST_F(FPDFAnnotEmbedderTest, BSCompleteRoundTrip) {
+  // Test complete round-trip: set all BS values, save, reload, and verify.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Create a polyline annotation.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYLINE));
+    ASSERT_TRUE(annot);
+
+    // Set all BS values.
+    EXPECT_TRUE(FPDFAnnot_SetBSWidth(annot.get(), 2.5f));
+    EXPECT_TRUE(FPDFAnnot_SetBSStyle(annot.get(), "D"));
+    EXPECT_TRUE(FPDFAnnot_SetBSDash(annot.get(), 3.0f, 2.0f, 1.0f));
+
+    // Verify values before save.
+    float width = 0.0f;
+    EXPECT_TRUE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+    EXPECT_FLOAT_EQ(2.5f, width);
+
+    char style_buffer[10] = {0};
+    unsigned long length =
+        FPDFAnnot_GetBSStyle(annot.get(), style_buffer, 10);
+    EXPECT_EQ(2u, length);
+    EXPECT_STREQ("D", style_buffer);
+
+    float dash = 0.0f, gap = 0.0f, phase = 0.0f;
+    EXPECT_TRUE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, &phase));
+    EXPECT_FLOAT_EQ(3.0f, dash);
+    EXPECT_FLOAT_EQ(2.0f, gap);
+    EXPECT_FLOAT_EQ(1.0f, phase);
+  }
+
+  // Save the document.
+  EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
+
+  {
+    // Reload and verify values persist.
+    ScopedSavedDoc saved_doc = OpenScopedSavedDocument();
+    ASSERT_TRUE(saved_doc);
+    ScopedSavedPage saved_page = LoadScopedSavedPage(0);
+    ASSERT_TRUE(saved_page);
+
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(saved_page.get(), 0));
+    ASSERT_TRUE(annot);
+
+    // Verify all values are still correct.
+    float width = 0.0f;
+    EXPECT_TRUE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+    EXPECT_FLOAT_EQ(2.5f, width);
+
+    char style_buffer[10] = {0};
+    unsigned long length =
+        FPDFAnnot_GetBSStyle(annot.get(), style_buffer, 10);
+    EXPECT_EQ(2u, length);
+    EXPECT_STREQ("D", style_buffer);
+
+    float dash = 0.0f, gap = 0.0f, phase = 0.0f;
+    EXPECT_TRUE(FPDFAnnot_GetBSDash(annot.get(), &dash, &gap, &phase));
+    EXPECT_FLOAT_EQ(3.0f, dash);
+    EXPECT_FLOAT_EQ(2.0f, gap);
+    EXPECT_FLOAT_EQ(1.0f, phase);
+  }
+}
+
+TEST_F(FPDFAnnotEmbedderTest, BSWithPolygonAnnotation) {
+  // Test BS functions with polygon annotation.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYGON));
+    ASSERT_TRUE(annot);
+
+    // Set and get BS width.
+    EXPECT_TRUE(FPDFAnnot_SetBSWidth(annot.get(), 1.5f));
+    float width = 0.0f;
+    EXPECT_TRUE(FPDFAnnot_GetBSWidth(annot.get(), &width));
+    EXPECT_FLOAT_EQ(1.5f, width);
+
+    // Set and get BS style.
+    EXPECT_TRUE(FPDFAnnot_SetBSStyle(annot.get(), "S"));
+    char buffer[10] = {0};
+    unsigned long length = FPDFAnnot_GetBSStyle(annot.get(), buffer, 10);
+    EXPECT_EQ(2u, length);
+    EXPECT_STREQ("S", buffer);
+  }
+}
+
 TEST_F(FPDFAnnotEmbedderTest, GetSetAP) {
   // Open a file with four annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));

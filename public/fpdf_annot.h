@@ -511,6 +511,93 @@ FPDFAnnot_GetBorder(FPDF_ANNOTATION annot,
                     float* border_width);
 
 // Experimental API.
+// Get the width value from the annotation's /BS (Border Style) dictionary.
+//
+//   annot  - handle to an annotation.
+//   width  - receives the width value, must not be NULL.
+//
+// Returns true if /BS dictionary exists and /W key is present, false otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetBSWidth(FPDF_ANNOTATION annot, float* width);
+
+// Experimental API.
+// Set the width value in the annotation's /BS (Border Style) dictionary.
+//
+//   annot  - handle to an annotation.
+//   width  - the width value to be set, in default user space units.
+//
+// Returns true if successful, false otherwise. Creates /BS dictionary if it
+// doesn't exist. Rejects negative width values.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetBSWidth(FPDF_ANNOTATION annot, float width);
+
+// Experimental API.
+// Get the style name from the annotation's /BS (Border Style) dictionary.
+// |buffer| is only modified if |buflen| is large enough to hold the style name.
+// If |buflen| is smaller, the total size is still returned, but nothing is
+// copied. If /BS dictionary doesn't exist or /S key is missing, an empty string
+// is written to |buffer| and 1 is returned (for null terminator). On other
+// errors, nothing is written to |buffer| and 0 is returned.
+//
+//   annot  - handle to an annotation.
+//   buffer - buffer for holding the style name, as a null-terminated byte string.
+//            Valid values are "S" (solid), "D" (dashed), "B" (beveled), "I"
+//            (inset), or "U" (underline).
+//   buflen - length of the buffer in bytes.
+//
+// Returns the length of the style name in bytes, including the null terminator.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetBSStyle(FPDF_ANNOTATION annot,
+                     char* buffer,
+                     unsigned long buflen);
+
+// Experimental API.
+// Set the style name in the annotation's /BS (Border Style) dictionary.
+//
+//   annot  - handle to an annotation.
+//   style  - the style name to be set, encoded as a byte string. Must be one of:
+//            "S" (solid), "D" (dashed), "B" (beveled), "I" (inset), or "U"
+//            (underline).
+//
+// Returns true if successful, false otherwise. Creates /BS dictionary if it
+// doesn't exist. Rejects invalid style names.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetBSStyle(FPDF_ANNOTATION annot, FPDF_BYTESTRING style);
+
+// Experimental API.
+// Get the dash pattern array from the annotation's /BS (Border Style)
+// dictionary.
+//
+//   annot  - handle to an annotation.
+//   dash   - receives the dash value, must not be NULL.
+//   gap    - receives the gap value, must not be NULL.
+//   phase  - receives the phase value, must not be NULL.
+//
+// Returns true if /BS dictionary exists, /D key is present, and array has at
+// least 3 elements, false otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetBSDash(FPDF_ANNOTATION annot,
+                    float* dash,
+                    float* gap,
+                    float* phase);
+
+// Experimental API.
+// Set the dash pattern array in the annotation's /BS (Border Style) dictionary.
+//
+//   annot  - handle to an annotation.
+//   dash   - the dash value, in default user space units.
+//   gap    - the gap value, in default user space units.
+//   phase  - the phase value, in default user space units.
+//
+// Returns true if successful, false otherwise. Creates /BS dictionary and /D
+// array if they don't exist. Rejects negative values.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetBSDash(FPDF_ANNOTATION annot,
+                    float dash,
+                    float gap,
+                    float phase);
+
+// Experimental API.
 // Get the JavaScript of an event of the annotation's additional actions.
 // |buffer| is only modified if |buflen| is large enough to hold the whole
 // JavaScript string. If |buflen| is smaller, the total size of the JavaScript

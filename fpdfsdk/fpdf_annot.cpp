@@ -4,6 +4,7 @@
 
 #include "public/fpdf_annot.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <sstream>
@@ -1100,6 +1101,158 @@ FPDFAnnot_GetBorder(FPDF_ANNOTATION annot,
   *horizontal_radius = border->GetFloatAt(0);
   *vertical_radius = border->GetFloatAt(1);
   *border_width = border->GetFloatAt(2);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetBSWidth(FPDF_ANNOTATION annot,
+                                                         float* width) {
+  if (!width) {
+    return false;
+  }
+
+  const CPDF_Dictionary* annot_dict = GetAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> bs_dict = annot_dict->GetDictFor("BS");
+  if (!bs_dict || !bs_dict->KeyExist("W")) {
+    return false;
+  }
+  
+  *width = bs_dict->GetFloatFor("W");
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetBSWidth(FPDF_ANNOTATION annot,
+                                                         float width) {
+  if (width < 0.0f) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> bs_dict = annot_dict->GetOrCreateDictFor("BS");
+  bs_dict->SetNewFor<CPDF_Number>("W", width);
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetBSStyle(FPDF_ANNOTATION annot, char* buffer, unsigned long buflen) {
+  const CPDF_Dictionary* annot_dict = GetAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> bs_dict = annot_dict->GetDictFor("BS");
+  if (!bs_dict) {
+    if (buffer && buflen > 0) {
+      buffer[0] = '\0';
+    }
+    return 1;  // Return 1 for null terminator when key doesn't exist
+  }
+
+  ByteString style = bs_dict->GetByteStringFor("S");
+  if (style.IsEmpty()) {
+    if (buffer && buflen > 0) {
+      buffer[0] = '\0';
+    }
+    return 1;  // Return 1 for null terminator when key doesn't exist
+  }
+
+  // Copy style name to buffer
+  size_t style_len = style.GetLength();
+  size_t copy_len = std::min(static_cast<size_t>(buflen), style_len + 1);
+  if (buffer && copy_len > 0) {
+    // SAFETY: required from caller.
+    auto buffer_span = UNSAFE_BUFFERS(pdfium::span(buffer, buflen));
+    auto style_span = style.span();
+    fxcrt::Copy(style_span.first(copy_len - 1),
+                buffer_span.first(copy_len - 1));
+    buffer[copy_len - 1] = '\0';
+  }
+
+  return static_cast<unsigned long>(style_len + 1);
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetBSStyle(FPDF_ANNOTATION annot,
+                                                         FPDF_BYTESTRING style) {
+  if (!style) {
+    return false;
+  }
+
+  ByteString style_str(style);
+  // Validate style is one of the valid PDF border style names
+  if (style_str != "S" && style_str != "D" && style_str != "B" &&
+      style_str != "I" && style_str != "U") {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> bs_dict = annot_dict->GetOrCreateDictFor("BS");
+  bs_dict->SetNewFor<CPDF_Name>("S", style_str);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetBSDash(FPDF_ANNOTATION annot,
+                    float* dash,
+                    float* gap,
+                    float* phase) {
+  if (!dash || !gap || !phase) {
+    return false;
+  }
+
+  const CPDF_Dictionary* annot_dict = GetAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> bs_dict = annot_dict->GetDictFor("BS");
+  if (!bs_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Array> dash_array = bs_dict->GetArrayFor("D");
+  if (!dash_array || dash_array->size() < 3) {
+    return false;
+  }
+
+  *dash = dash_array->GetFloatAt(0);
+  *gap = dash_array->GetFloatAt(1);
+  *phase = dash_array->GetFloatAt(2);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetBSDash(FPDF_ANNOTATION annot,
+                    float dash,
+                    float gap,
+                    float phase) {
+  if (dash < 0.0f || gap < 0.0f || phase < 0.0f) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> bs_dict = annot_dict->GetOrCreateDictFor("BS");
+  auto dash_array = bs_dict->SetNewFor<CPDF_Array>("D");
+  dash_array->AppendNew<CPDF_Number>(dash);
+  dash_array->AppendNew<CPDF_Number>(gap);
+  dash_array->AppendNew<CPDF_Number>(phase);
   return true;
 }
 
