@@ -384,12 +384,16 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_IsSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype) {
   // The supported subtypes must also be communicated in the user doc.
   switch (subtype) {
+    case FPDF_ANNOT_CARET:
     case FPDF_ANNOT_CIRCLE:
     case FPDF_ANNOT_FILEATTACHMENT:
     case FPDF_ANNOT_FREETEXT:
     case FPDF_ANNOT_HIGHLIGHT:
     case FPDF_ANNOT_INK:
+    case FPDF_ANNOT_LINE:
     case FPDF_ANNOT_LINK:
+    case FPDF_ANNOT_POLYGON:
+    case FPDF_ANNOT_POLYLINE:
     case FPDF_ANNOT_POPUP:
     case FPDF_ANNOT_SQUARE:
     case FPDF_ANNOT_SQUIGGLY:
@@ -397,6 +401,7 @@ FPDFAnnot_IsSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype) {
     case FPDF_ANNOT_STRIKEOUT:
     case FPDF_ANNOT_TEXT:
     case FPDF_ANNOT_UNDERLINE:
+    case FPDF_ANNOT_WATERMARK:
       return true;
     default:
       return false;

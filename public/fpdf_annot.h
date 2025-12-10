@@ -100,19 +100,24 @@ typedef enum FPDFANNOT_COLORTYPE {
 // Experimental API.
 // Check if an annotation subtype is currently supported for creation.
 // Currently supported subtypes:
+//    - caret
 //    - circle
 //    - fileattachment
 //    - freetext
 //    - highlight
 //    - ink
+//    - line
 //    - link
+//    - polygon
+//    - polyline
 //    - popup
-//    - square,
+//    - square
 //    - squiggly
 //    - stamp
 //    - strikeout
 //    - text
 //    - underline
+//    - watermark
 //
 //   subtype   - the subtype to be checked.
 //
