@@ -992,6 +992,34 @@ FPDFAnnot_GetVertices(FPDF_ANNOTATION annot,
   return points_len;
 }
 
+FPDF_EXPORT unsigned long FPDF_CALLCONV FPDFAnnot_SetVertices(
+    FPDF_ANNOTATION annot,
+    const FS_POINTF* vertices,
+    unsigned long count) {
+  if (!vertices || count == 0) {
+    return 0;
+  }
+
+  FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annot);
+  if (subtype != FPDF_ANNOT_POLYGON && subtype != FPDF_ANNOT_POLYLINE) {
+    return 0;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return 0;
+  }
+
+  auto vertices_array =
+      annot_dict->SetNewFor<CPDF_Array>(pdfium::annotation::kVertices);
+  for (unsigned long i = 0; i < count; ++i) {
+    vertices_array->AppendNew<CPDF_Number>(vertices[i].x);
+    vertices_array->AppendNew<CPDF_Number>(vertices[i].y);
+  }
+  return count;
+}
+
 FPDF_EXPORT unsigned long FPDF_CALLCONV
 FPDFAnnot_GetInkListCount(FPDF_ANNOTATION annot) {
   RetainPtr<const CPDF_Array> ink_list = GetInkList(annot);
@@ -1054,6 +1082,32 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetLine(FPDF_ANNOTATION annot,
   start->y = line->GetFloatAt(1);
   end->x = line->GetFloatAt(2);
   end->y = line->GetFloatAt(3);
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetLine(FPDF_ANNOTATION annot,
+                                                      const FS_POINTF* start,
+                                                      const FS_POINTF* end) {
+  if (!start || !end) {
+    return false;
+  }
+
+  FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annot);
+  if (subtype != FPDF_ANNOT_LINE) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return false;
+  }
+
+  auto line = annot_dict->SetNewFor<CPDF_Array>(pdfium::annotation::kL);
+  line->AppendNew<CPDF_Number>(start->x);
+  line->AppendNew<CPDF_Number>(start->y);
+  line->AppendNew<CPDF_Number>(end->x);
+  line->AppendNew<CPDF_Number>(end->y);
   return true;
 }
 

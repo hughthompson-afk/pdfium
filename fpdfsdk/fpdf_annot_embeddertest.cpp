@@ -3772,6 +3772,112 @@ TEST_F(FPDFAnnotEmbedderTest, PolygonAnnotation) {
         FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
     EXPECT_EQ(0U, FPDFAnnot_GetVertices(ink_annot.get(), nullptr, 0));
   }
+
+  {
+    // FPDFAnnot_SetVertices() positive testing for polygon.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYGON));
+    ASSERT_TRUE(annot);
+
+    std::vector<FS_POINTF> vertices = {
+        {100.0f, 200.0f}, {300.0f, 400.0f}, {500.0f, 600.0f}};
+    EXPECT_EQ(vertices.size(),
+              FPDFAnnot_SetVertices(annot.get(), vertices.data(),
+                                    vertices.size()));
+
+    unsigned long count = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    ASSERT_EQ(vertices.size(), count);
+    std::vector<FS_POINTF> retrieved(count);
+    FPDFAnnot_GetVertices(annot.get(), retrieved.data(), count);
+    for (size_t i = 0; i < vertices.size(); ++i) {
+      EXPECT_FLOAT_EQ(vertices[i].x, retrieved[i].x);
+      EXPECT_FLOAT_EQ(vertices[i].y, retrieved[i].y);
+    }
+  }
+
+  {
+    // FPDFAnnot_SetVertices() positive testing for polyline.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYLINE));
+    ASSERT_TRUE(annot);
+
+    std::vector<FS_POINTF> vertices = {
+        {150.0f, 250.0f}, {350.0f, 450.0f}, {550.0f, 650.0f}};
+    EXPECT_EQ(vertices.size(),
+              FPDFAnnot_SetVertices(annot.get(), vertices.data(),
+                                    vertices.size()));
+
+    unsigned long count = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    ASSERT_EQ(vertices.size(), count);
+    std::vector<FS_POINTF> retrieved(count);
+    FPDFAnnot_GetVertices(annot.get(), retrieved.data(), count);
+    for (size_t i = 0; i < vertices.size(); ++i) {
+      EXPECT_FLOAT_EQ(vertices[i].x, retrieved[i].x);
+      EXPECT_FLOAT_EQ(vertices[i].y, retrieved[i].y);
+    }
+  }
+
+  {
+    // FPDFAnnot_SetVertices() negative testing.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYGON));
+    ASSERT_TRUE(annot);
+
+    std::vector<FS_POINTF> vertices = {
+        {100.0f, 200.0f}, {300.0f, 400.0f}};
+
+    EXPECT_EQ(0U, FPDFAnnot_SetVertices(nullptr, vertices.data(),
+                                         vertices.size()));
+    EXPECT_EQ(0U, FPDFAnnot_SetVertices(annot.get(), nullptr,
+                                         vertices.size()));
+    EXPECT_EQ(0U, FPDFAnnot_SetVertices(annot.get(), vertices.data(), 0));
+
+    // Wrong annotation type.
+    ScopedFPDFAnnotation line_annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    EXPECT_EQ(0U, FPDFAnnot_SetVertices(line_annot.get(), vertices.data(),
+                                        vertices.size()));
+  }
+
+  {
+    // FPDFAnnot_SetVertices() modify existing annotation.
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page.get(), 0));
+    ASSERT_TRUE(annot);
+
+    std::vector<FS_POINTF> new_vertices = {
+        {200.0f, 300.0f}, {400.0f, 500.0f}, {600.0f, 700.0f}};
+    EXPECT_EQ(new_vertices.size(),
+              FPDFAnnot_SetVertices(annot.get(), new_vertices.data(),
+                                    new_vertices.size()));
+
+    unsigned long count = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    ASSERT_EQ(new_vertices.size(), count);
+    std::vector<FS_POINTF> retrieved(count);
+    FPDFAnnot_GetVertices(annot.get(), retrieved.data(), count);
+    for (size_t i = 0; i < new_vertices.size(); ++i) {
+      EXPECT_FLOAT_EQ(new_vertices[i].x, retrieved[i].x);
+      EXPECT_FLOAT_EQ(new_vertices[i].y, retrieved[i].y);
+    }
+  }
+
+  {
+    // FPDFAnnot_SetVertices() edge case: single vertex (minimum valid).
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_POLYGON));
+    ASSERT_TRUE(annot);
+
+    std::vector<FS_POINTF> vertices = {{100.0f, 200.0f}};
+    EXPECT_EQ(vertices.size(),
+              FPDFAnnot_SetVertices(annot.get(), vertices.data(),
+                                    vertices.size()));
+
+    unsigned long count = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    ASSERT_EQ(vertices.size(), count);
+    std::vector<FS_POINTF> retrieved(count);
+    FPDFAnnot_GetVertices(annot.get(), retrieved.data(), count);
+    EXPECT_FLOAT_EQ(vertices[0].x, retrieved[0].x);
+    EXPECT_FLOAT_EQ(vertices[0].y, retrieved[0].y);
+  }
 }
 
 TEST_F(FPDFAnnotEmbedderTest, InkAnnotation) {
@@ -3902,6 +4008,62 @@ TEST_F(FPDFAnnotEmbedderTest, LineAnnotation) {
     FS_POINTF start;
     FS_POINTF end;
     EXPECT_FALSE(FPDFAnnot_GetLine(ink_annot.get(), &start, &end));
+  }
+
+  {
+    // FPDFAnnot_SetLine() positive testing.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    ASSERT_TRUE(annot);
+
+    FS_POINTF start = {100.0f, 200.0f};
+    FS_POINTF end = {300.0f, 400.0f};
+    EXPECT_TRUE(FPDFAnnot_SetLine(annot.get(), &start, &end));
+
+    FS_POINTF retrieved_start;
+    FS_POINTF retrieved_end;
+    ASSERT_TRUE(FPDFAnnot_GetLine(annot.get(), &retrieved_start, &retrieved_end));
+    EXPECT_FLOAT_EQ(start.x, retrieved_start.x);
+    EXPECT_FLOAT_EQ(start.y, retrieved_start.y);
+    EXPECT_FLOAT_EQ(end.x, retrieved_end.x);
+    EXPECT_FLOAT_EQ(end.y, retrieved_end.y);
+  }
+
+  {
+    // FPDFAnnot_SetLine() negative testing.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_LINE));
+    ASSERT_TRUE(annot);
+
+    FS_POINTF start = {100.0f, 200.0f};
+    FS_POINTF end = {300.0f, 400.0f};
+
+    EXPECT_FALSE(FPDFAnnot_SetLine(nullptr, &start, &end));
+    EXPECT_FALSE(FPDFAnnot_SetLine(annot.get(), nullptr, &end));
+    EXPECT_FALSE(FPDFAnnot_SetLine(annot.get(), &start, nullptr));
+
+    // Wrong annotation type.
+    ScopedFPDFAnnotation ink_annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
+    EXPECT_FALSE(FPDFAnnot_SetLine(ink_annot.get(), &start, &end));
+  }
+
+  {
+    // FPDFAnnot_SetLine() modify existing annotation.
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page.get(), 0));
+    ASSERT_TRUE(annot);
+
+    FS_POINTF new_start = {50.0f, 100.0f};
+    FS_POINTF new_end = {250.0f, 350.0f};
+    EXPECT_TRUE(FPDFAnnot_SetLine(annot.get(), &new_start, &new_end));
+
+    FS_POINTF retrieved_start;
+    FS_POINTF retrieved_end;
+    ASSERT_TRUE(FPDFAnnot_GetLine(annot.get(), &retrieved_start, &retrieved_end));
+    EXPECT_FLOAT_EQ(new_start.x, retrieved_start.x);
+    EXPECT_FLOAT_EQ(new_start.y, retrieved_start.y);
+    EXPECT_FLOAT_EQ(new_end.x, retrieved_end.x);
+    EXPECT_FLOAT_EQ(new_end.y, retrieved_end.y);
   }
 }
 

@@ -437,6 +437,30 @@ FPDFAnnot_GetVertices(FPDF_ANNOTATION annot,
                       unsigned long length);
 
 // Experimental API.
+// Set the vertices of a polyline or polygon annotation.
+//
+//   annot    - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//   vertices - array of points defining the path (must not be NULL)
+//   count    - number of points in the vertices array (must be > 0)
+//
+// Returns the number of points set if the annotation is of type polyline or
+// polygon, |vertices| is not NULL, |count| > 0, and setting the /Vertices
+// dictionary entry succeeds. Returns 0 on failure.
+//
+// This function sets the /Vertices entry in the annotation dictionary to an
+// array [v0.x, v0.y, v1.x, v1.y, ...] where v0, v1, etc. are the points in
+// the vertices array. The appearance stream (/AP) is not automatically
+// updated; callers must rebuild it separately if needed.
+//
+// For polygon annotations, the path should be closed (first and last points
+// should typically be the same, or the viewer will close it automatically).
+// For polyline annotations, the path remains open.
+FPDF_EXPORT unsigned long FPDF_CALLCONV FPDFAnnot_SetVertices(
+    FPDF_ANNOTATION annot,
+    const FS_POINTF* vertices,
+    unsigned long count);
+
+// Experimental API.
 // Get the number of paths in the ink list of an ink annotation.
 //
 //   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
@@ -476,6 +500,23 @@ FPDFAnnot_GetInkListPath(FPDF_ANNOTATION annot,
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetLine(FPDF_ANNOTATION annot,
                                                       FS_POINTF* start,
                                                       FS_POINTF* end);
+
+// Experimental API.
+// Set the starting and ending coordinates of a line annotation.
+//
+//   annot  - handle to an annotation, as returned by e.g. FPDFPage_GetAnnot()
+//   start  - starting point (must not be NULL)
+//   end    - ending point (must not be NULL)
+//
+// Returns true if the annotation is of type line, |start| and |end| are not
+// NULL, and setting the /L dictionary entry succeeds, false otherwise.
+//
+// This function sets the /L entry in the annotation dictionary to an array
+// [start.x, start.y, end.x, end.y]. The appearance stream (/AP) is not
+// automatically updated; callers must rebuild it separately if needed.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetLine(FPDF_ANNOTATION annot,
+                                                      const FS_POINTF* start,
+                                                      const FS_POINTF* end);
 
 // Experimental API.
 // Set the characteristics of the annotation's border (rounded rectangle).
