@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "constants/annotation_common.h"
+#include "constants/form_fields.h"
 #include "core/fpdfapi/edit/cpdf_pagecontentgenerator.h"
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
 #include "core/fpdfapi/page/cpdf_form.h"
@@ -379,6 +380,61 @@ std::optional<FX_COLORREF> GetWidgetFontColor(FPDF_FORMHANDLE handle,
   return widget ? widget->GetTextColor() : std::nullopt;
 }
 
+// Helper to get or create AcroForm dictionary
+RetainPtr<CPDF_Dictionary> GetOrCreateAcroForm(CPDF_Document* document) {
+  RetainPtr<CPDF_Dictionary> pRoot = document->GetMutableRoot();
+  if (!pRoot) {
+    return nullptr;
+  }
+
+  RetainPtr<CPDF_Dictionary> acro_form =
+      pRoot->GetMutableDictFor("AcroForm");
+  if (!acro_form) {
+    acro_form = CPDF_InteractiveForm::InitAcroFormDict(document);
+  }
+  return acro_form;
+}
+
+// Helper to create form field dictionary
+RetainPtr<CPDF_Dictionary> CreateFormFieldDict(
+    CPDF_Document* document,
+    const ByteString& field_name,
+    const ByteString& field_type,
+    CPDF_Page* page,
+    const CFX_FloatRect& rect) {
+  // Create form field dictionary
+  auto field_dict = document->NewIndirect<CPDF_Dictionary>();
+
+  // Set required keys
+  field_dict->SetNewFor<CPDF_Name>(pdfium::form_fields::kFT, field_type);
+  field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kT, field_name);
+
+  // Set rect and page reference (for merged dictionary case)
+  field_dict->SetRectFor(pdfium::annotation::kRect, rect);
+  field_dict->SetNewFor<CPDF_Reference>(
+      pdfium::annotation::kP, document, page->GetDict()->GetObjNum());
+
+  // Set annotation type and subtype
+  field_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kType, "Annot");
+  field_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kSubtype, "Widget");
+
+  return field_dict;
+}
+
+// Helper to add form field to AcroForm Fields array
+bool AddFieldToAcroForm(RetainPtr<CPDF_Dictionary> acro_form,
+                        RetainPtr<CPDF_Dictionary> field_dict,
+                        CPDF_Document* document) {
+  RetainPtr<CPDF_Array> fields = acro_form->GetMutableArrayFor("Fields");
+  if (!fields) {
+    fields = acro_form->SetNewFor<CPDF_Array>("Fields");
+  }
+
+  // Add reference to field dictionary
+  fields->Append(field_dict->MakeReference(document));
+  return true;
+}
+
 }  // namespace
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -426,6 +482,88 @@ FPDFPage_CreateAnnot(FPDF_PAGE page, FPDF_ANNOTATION_SUBTYPE subtype) {
 
   RetainPtr<CPDF_Array> pAnnotList = pPage->GetOrCreateAnnotsArray();
   pAnnotList->Append(dict);
+
+  // Caller takes ownership.
+  return FPDFAnnotationFromCPDFAnnotContext(pNewAnnot.release());
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDF_EnsureAcroForm(FPDF_DOCUMENT document) {
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
+  if (!pDoc) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> acro_form = GetOrCreateAcroForm(pDoc);
+  return acro_form != nullptr;
+}
+
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
+FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
+                           FPDF_FORMHANDLE form_handle,
+                           FPDF_BYTESTRING field_name,
+                           FPDF_BYTESTRING field_type,
+                           const FS_RECTF* rect) {
+  if (!page || !form_handle || !field_name || !field_type || !rect) {
+    return nullptr;
+  }
+
+  // Validate field type
+  ByteString field_type_str(field_type);
+  if (field_type_str != pdfium::form_fields::kTx &&
+      field_type_str != pdfium::form_fields::kBtn &&
+      field_type_str != pdfium::form_fields::kCh &&
+      field_type_str != pdfium::form_fields::kSig) {
+    return nullptr;
+  }
+
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  if (!pPage) {
+    return nullptr;
+  }
+
+  CPDF_Document* pDoc = pPage->GetDocument();
+  if (!pDoc) {
+    return nullptr;
+  }
+
+  // Ensure AcroForm exists
+  RetainPtr<CPDF_Dictionary> acro_form = GetOrCreateAcroForm(pDoc);
+  if (!acro_form) {
+    return nullptr;
+  }
+
+  // Convert rect
+  CFX_FloatRect float_rect = CFXFloatRectFromFSRectF(*rect);
+
+  // Create form field dictionary (merged with widget annotation)
+  ByteString field_name_str(field_name);
+  RetainPtr<CPDF_Dictionary> field_dict = CreateFormFieldDict(
+      pDoc, field_name_str, field_type_str, pPage, float_rect);
+  if (!field_dict) {
+    return nullptr;
+  }
+
+  // Add to AcroForm Fields array
+  if (!AddFieldToAcroForm(acro_form, field_dict, pDoc)) {
+    return nullptr;
+  }
+
+  // Add to page's annotation array
+  RetainPtr<CPDF_Array> pAnnotList = pPage->GetOrCreateAnnotsArray();
+  pAnnotList->Append(field_dict->MakeReference(pDoc));
+
+  // Create annotation context
+  auto pNewAnnot = std::make_unique<CPDF_AnnotContext>(
+      field_dict, IPDFPageFromFPDFPage(page));
+
+  // Register with form fill environment if needed
+  CPDFSDK_InteractiveForm* pForm =
+      FormHandleToInteractiveForm(form_handle);
+  if (pForm) {
+    // Trigger form field loading so it's recognized by the form system
+    pForm->GetInteractiveForm()->FixPageFields(pPage);
+  }
 
   // Caller takes ownership.
   return FPDFAnnotationFromCPDFAnnotContext(pNewAnnot.release());

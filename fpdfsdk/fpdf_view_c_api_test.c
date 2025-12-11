@@ -108,8 +108,10 @@ int CheckPDFiumCApi() {
     CHK(FPDFAnnot_SetURI);
     CHK(FPDFAnnot_SetVertices);
     CHK(FPDFAnnot_UpdateObject);
+    CHK(FPDF_EnsureAcroForm);
     CHK(FPDFPage_CloseAnnot);
     CHK(FPDFPage_CreateAnnot);
+    CHK(FPDFPage_CreateWidgetAnnot);
     CHK(FPDFPage_GetAnnot);
     CHK(FPDFPage_GetAnnotCount);
     CHK(FPDFPage_GetAnnotIndex);

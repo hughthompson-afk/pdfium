@@ -187,6 +187,36 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPage_RemoveAnnot(FPDF_PAGE page,
                                                          int index);
 
 // Experimental API.
+// Ensure the document has an /AcroForm dictionary in its catalog.
+// Creates one if it doesn't exist.
+//
+//   document - Handle to the document.
+//
+// Returns TRUE if AcroForm exists or was successfully created, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_EnsureAcroForm(FPDF_DOCUMENT document);
+
+// Experimental API.
+// Create a widget annotation (form field annotation) in |page|.
+// This creates both the form field dictionary and the widget annotation,
+// properly linking them together.
+//
+//   page        - Handle to the page.
+//   form_handle - Handle to the form fill module (required).
+//   field_name  - The field name (/T key), encoded in UTF-8.
+//   field_type  - The field type (/FT key): "Tx" (text), "Btn" (button),
+//                 "Ch" (choice), or "Sig" (signature).
+//   rect        - Bounding rectangle for the widget annotation.
+//
+// Returns a handle to the created widget annotation, or NULL on failure.
+// Must call FPDFPage_CloseAnnot() when done.
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
+FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
+                           FPDF_FORMHANDLE form_handle,
+                           FPDF_BYTESTRING field_name,
+                           FPDF_BYTESTRING field_type,
+                           const FS_RECTF* rect);
+
+// Experimental API.
 // Get the subtype of an annotation.
 //
 //   annot  - handle to an annotation.
