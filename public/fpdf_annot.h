@@ -200,12 +200,22 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_EnsureAcroForm(FPDF_DOCUMENT document);
 // This creates both the form field dictionary and the widget annotation,
 // properly linking them together.
 //
-//   page        - Handle to the page.
-//   form_handle - Handle to the form fill module (required).
-//   field_name  - The field name (/T key), encoded in UTF-8.
-//   field_type  - The field type (/FT key): "Tx" (text), "Btn" (button),
-//                 "Ch" (choice), or "Sig" (signature).
-//   rect        - Bounding rectangle for the widget annotation.
+//   page               - Handle to the page.
+//   form_handle        - Handle to the form fill module (required).
+//   field_name         - The field name (/T key), encoded in UTF-8.
+//   field_type         - The field type (/FT key): "Tx" (text), "Btn" (button),
+//                        "Ch" (choice), or "Sig" (signature).
+//   rect               - Bounding rectangle for the widget annotation.
+//   options            - Optional: array of option strings for choice fields
+//                        (NULL to skip). Each string is UTF-16LE encoded.
+//   option_count       - Number of options in the array (0 to skip).
+//   max_length         - Optional: max text length for text fields (-1 to skip).
+//   quadding           - Optional: text alignment (-1 to skip).
+//                        0=left, 1=center, 2=right.
+//   default_appearance - Optional: default appearance string for variable text
+//                        fields (NULL to skip). Format: "/FontName Size Tf".
+//   default_value      - Optional: default value for form reset (NULL to skip).
+//                        UTF-16LE encoded.
 //
 // Returns a handle to the created widget annotation, or NULL on failure.
 // Must call FPDFPage_CloseAnnot() when done.
@@ -214,7 +224,13 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
                            FPDF_FORMHANDLE form_handle,
                            FPDF_BYTESTRING field_name,
                            FPDF_BYTESTRING field_type,
-                           const FS_RECTF* rect);
+                           const FS_RECTF* rect,
+                           const FPDF_WCHAR* const* options,
+                           size_t option_count,
+                           int max_length,
+                           int quadding,
+                           FPDF_BYTESTRING default_appearance,
+                           FPDF_WIDESTRING default_value);
 
 // Experimental API.
 // Get the subtype of an annotation.
@@ -1006,6 +1022,87 @@ FPDFAnnot_IsOptionSelected(FPDF_FORMHANDLE handle,
                            int index);
 
 // Experimental API.
+// Set options array for combo box or list box widget annotation.
+// Simple format - each string is both the display label and export value.
+//
+//   hHandle      - handle to the form fill module.
+//   annot        - handle to an interactive form annotation.
+//   options      - array of null-terminated UTF-16LE option strings.
+//   option_count - number of options in the array.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldOptionArray(FPDF_FORMHANDLE hHandle,
+                                  FPDF_ANNOTATION annot,
+                                  const FPDF_WCHAR* const* options,
+                                  size_t option_count);
+
+// Experimental API.
+// Set options array with separate export values and display labels.
+// Export value format - each option has a value (stored) and label (displayed).
+//
+//   hHandle        - handle to the form fill module.
+//   annot          - handle to an interactive form annotation.
+//   export_values  - array of null-terminated UTF-16LE export value strings.
+//   display_labels - array of null-terminated UTF-16LE display label strings.
+//   option_count   - number of options in both arrays.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldOptionArrayWithExportValues(
+    FPDF_FORMHANDLE hHandle,
+    FPDF_ANNOTATION annot,
+    const FPDF_WCHAR* const* export_values,
+    const FPDF_WCHAR* const* display_labels,
+    size_t option_count);
+
+// Experimental API.
+// Set the maximum text length for a text field widget annotation.
+//
+//   hHandle    - handle to the form fill module.
+//   annot      - handle to an interactive form annotation.
+//   max_length - maximum number of characters. 0 or negative for unlimited.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMaxLen(FPDF_FORMHANDLE hHandle,
+                             FPDF_ANNOTATION annot,
+                             int max_length);
+
+// Experimental API.
+// Get the maximum text length for a text field widget annotation.
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//
+// Returns the maximum length, or -1 on error. 0 means unlimited.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMaxLen(FPDF_FORMHANDLE hHandle, FPDF_ANNOTATION annot);
+
+// Experimental API.
+// Set the text alignment (quadding) for a text field widget annotation.
+//
+//   hHandle  - handle to the form fill module.
+//   annot    - handle to an interactive form annotation.
+//   quadding - alignment value: 0=left, 1=center, 2=right.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldQuadding(FPDF_FORMHANDLE hHandle,
+                               FPDF_ANNOTATION annot,
+                               int quadding);
+
+// Experimental API.
+// Get the text alignment (quadding) for a text field widget annotation.
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//
+// Returns the quadding value (0=left, 1=center, 2=right), or -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldQuadding(FPDF_FORMHANDLE hHandle, FPDF_ANNOTATION annot);
+
+// Experimental API.
 // Get the float value of the font size for an |annot| with variable text.
 // If 0, the font is to be auto-sized: its size is computed as a function of
 // the height of the annotation rectangle.
@@ -1059,6 +1156,309 @@ FPDFAnnot_GetFontColor(FPDF_FORMHANDLE hHandle,
                        unsigned int* R,
                        unsigned int* G,
                        unsigned int* B);
+
+// Experimental API.
+// Set the normal caption for a button widget annotation (/MK/CA).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   caption - null-terminated UTF-16LE caption string, or NULL to remove.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKNormalCaption(FPDF_FORMHANDLE hHandle,
+                                      FPDF_ANNOTATION annot,
+                                      FPDF_WIDESTRING caption);
+
+// Experimental API.
+// Get the normal caption for a button widget annotation (/MK/CA).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   buffer  - buffer for holding the caption string, encoded in UTF-16LE.
+//   buflen  - length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKNormalCaption(FPDF_FORMHANDLE hHandle,
+                                      FPDF_ANNOTATION annot,
+                                      FPDF_WCHAR* buffer,
+                                      unsigned long buflen);
+
+// Experimental API.
+// Set the rollover caption for a button widget annotation (/MK/RC).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   caption - null-terminated UTF-16LE caption string, or NULL to remove.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKRolloverCaption(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_WIDESTRING caption);
+
+// Experimental API.
+// Get the rollover caption for a button widget annotation (/MK/RC).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   buffer  - buffer for holding the caption string, encoded in UTF-16LE.
+//   buflen  - length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKRolloverCaption(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_WCHAR* buffer,
+                                        unsigned long buflen);
+
+// Experimental API.
+// Set the down caption for a button widget annotation (/MK/AC).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   caption - null-terminated UTF-16LE caption string, or NULL to remove.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKDownCaption(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    FPDF_WIDESTRING caption);
+
+// Experimental API.
+// Get the down caption for a button widget annotation (/MK/AC).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   buffer  - buffer for holding the caption string, encoded in UTF-16LE.
+//   buflen  - length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKDownCaption(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    FPDF_WCHAR* buffer,
+                                    unsigned long buflen);
+
+// Experimental API.
+// Set the border color for a button widget annotation (/MK/BC).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   color_type      - color type: 0=transparent, 1=Gray, 3=RGB, 4=CMYK.
+//   components      - array of color component values (0.0-1.0).
+//   component_count - number of components (must match color_type).
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKBorderColor(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    int color_type,
+                                    const float* components,
+                                    size_t component_count);
+
+// Experimental API.
+// Get the border color for a button widget annotation (/MK/BC).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   color_type      - receives color type: 0=transparent, 1=Gray, 3=RGB, 4=CMYK.
+//   components      - buffer for color component values (0.0-1.0).
+//   component_count - size of components buffer.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKBorderColor(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    int* color_type,
+                                    float* components,
+                                    size_t component_count);
+
+// Experimental API.
+// Set the background color for a button widget annotation (/MK/BG).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   color_type      - color type: 0=transparent, 1=Gray, 3=RGB, 4=CMYK.
+//   components      - array of color component values (0.0-1.0).
+//   component_count - number of components (must match color_type).
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKBackgroundColor(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        int color_type,
+                                        const float* components,
+                                        size_t component_count);
+
+// Experimental API.
+// Get the background color for a button widget annotation (/MK/BG).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   color_type      - receives color type: 0=transparent, 1=Gray, 3=RGB, 4=CMYK.
+//   components      - buffer for color component values (0.0-1.0).
+//   component_count - size of components buffer.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKBackgroundColor(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        int* color_type,
+                                        float* components,
+                                        size_t component_count);
+
+// Experimental API.
+// Set the rotation for a button widget annotation (/MK/R).
+//
+//   hHandle  - handle to the form fill module.
+//   annot    - handle to an interactive form annotation.
+//   rotation - rotation in degrees (0, 90, 180, or 270).
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKRotation(FPDF_FORMHANDLE hHandle,
+                                 FPDF_ANNOTATION annot,
+                                 int rotation);
+
+// Experimental API.
+// Get the rotation for a button widget annotation (/MK/R).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//
+// Returns the rotation in degrees (0, 90, 180, or 270), or -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKRotation(FPDF_FORMHANDLE hHandle,
+                                 FPDF_ANNOTATION annot);
+
+// Experimental API.
+// Set the text position relative to icon for a button widget annotation (/MK/TP).
+//
+//   hHandle  - handle to the form fill module.
+//   annot    - handle to an interactive form annotation.
+//   position - text position (0-6): 0=caption only, 1=icon only,
+//              2=caption below, 3=caption above, 4=caption right,
+//              5=caption left, 6=caption overlaid.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKTextPosition(FPDF_FORMHANDLE hHandle,
+                                     FPDF_ANNOTATION annot,
+                                     int position);
+
+// Experimental API.
+// Get the text position relative to icon for a button widget annotation (/MK/TP).
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//
+// Returns the text position (0-6), or -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKTextPosition(FPDF_FORMHANDLE hHandle,
+                                     FPDF_ANNOTATION annot);
+
+// Experimental API.
+// Set the icon fit parameters for a button widget annotation (/MK/IF).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   scale_when      - when to scale: 0=always, 1=bigger, 2=smaller, 3=never.
+//   scale_type      - how to scale: 0=anamorphic, 1=proportional.
+//   left_position   - horizontal position (0.0=left, 0.5=center, 1.0=right).
+//   bottom_position - vertical position (0.0=bottom, 0.5=center, 1.0=top).
+//   fit_bounds      - true to scale to annotation bounds.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKIconFit(FPDF_FORMHANDLE hHandle,
+                                FPDF_ANNOTATION annot,
+                                int scale_when,
+                                int scale_type,
+                                float left_position,
+                                float bottom_position,
+                                FPDF_BOOL fit_bounds);
+
+// Experimental API.
+// Get the icon fit parameters for a button widget annotation (/MK/IF).
+//
+//   hHandle         - handle to the form fill module.
+//   annot           - handle to an interactive form annotation.
+//   scale_when      - receives when to scale (0-3).
+//   scale_type      - receives how to scale (0-1).
+//   left_position   - receives horizontal position.
+//   bottom_position - receives vertical position.
+//   fit_bounds      - receives fit bounds flag.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKIconFit(FPDF_FORMHANDLE hHandle,
+                                FPDF_ANNOTATION annot,
+                                int* scale_when,
+                                int* scale_type,
+                                float* left_position,
+                                float* bottom_position,
+                                FPDF_BOOL* fit_bounds);
+
+// Experimental API.
+// Set the default appearance string for a variable text widget annotation.
+// The DA string specifies font, size, and color for text rendering.
+// Format: "/FontName Size Tf R G B rg" (e.g., "/Helv 12 Tf 0 0 0 rg")
+//
+//   hHandle   - handle to the form fill module.
+//   annot     - handle to an interactive form annotation.
+//   da_string - null-terminated default appearance string, or NULL to remove.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldDefaultAppearance(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_BYTESTRING da_string);
+
+// Experimental API.
+// Get the default appearance string for a variable text widget annotation.
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   buffer  - buffer for holding the string, encoded in UTF-8.
+//   buflen  - length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes (including null terminator).
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldDefaultAppearance(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        char* buffer,
+                                        unsigned long buflen);
+
+// Experimental API.
+// Set the default value for a widget annotation.
+// This value is used when the form is reset.
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   value   - null-terminated UTF-16LE default value string, or NULL to remove.
+//
+// Returns true on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldDefaultValue(FPDF_FORMHANDLE hHandle,
+                                   FPDF_ANNOTATION annot,
+                                   FPDF_WIDESTRING value);
+
+// Experimental API.
+// Get the default value for a widget annotation.
+//
+//   hHandle - handle to the form fill module.
+//   annot   - handle to an interactive form annotation.
+//   buffer  - buffer for holding the value string, encoded in UTF-16LE.
+//   buflen  - length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldDefaultValue(FPDF_FORMHANDLE hHandle,
+                                   FPDF_ANNOTATION annot,
+                                   FPDF_WCHAR* buffer,
+                                   unsigned long buflen);
 
 // Experimental API.
 // Determine if |annot| is a form widget that is checked. Intended for use with

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "constants/annotation_common.h"
+#include "constants/appearance.h"
 #include "constants/form_fields.h"
 #include "core/fpdfapi/edit/cpdf_pagecontentgenerator.h"
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
@@ -401,7 +402,13 @@ RetainPtr<CPDF_Dictionary> CreateFormFieldDict(
     const ByteString& field_name,
     const ByteString& field_type,
     CPDF_Page* page,
-    const CFX_FloatRect& rect) {
+    const CFX_FloatRect& rect,
+    const FPDF_WCHAR* const* options,
+    size_t option_count,
+    int max_length,
+    int quadding,
+    const char* default_appearance,
+    const FPDF_WCHAR* default_value) {
   // Create form field dictionary
   auto field_dict = document->NewIndirect<CPDF_Dictionary>();
 
@@ -417,6 +424,44 @@ RetainPtr<CPDF_Dictionary> CreateFormFieldDict(
   // Set annotation type and subtype
   field_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kType, "Annot");
   field_dict->SetNewFor<CPDF_Name>(pdfium::annotation::kSubtype, "Widget");
+
+  // Set optional /Opt array for choice fields
+  if (options && option_count > 0 && field_type == pdfium::form_fields::kCh) {
+    auto opt_array = field_dict->SetNewFor<CPDF_Array>("Opt");
+    for (size_t i = 0; i < option_count; ++i) {
+      if (options[i]) {
+        // SAFETY: required from caller.
+        WideString opt_str =
+            UNSAFE_BUFFERS(WideStringFromFPDFWideString(options[i]));
+        opt_array->AppendNew<CPDF_String>(opt_str.AsStringView());
+      }
+    }
+  }
+
+  // Set optional /MaxLen for text fields
+  if (max_length > 0 && field_type == pdfium::form_fields::kTx) {
+    field_dict->SetNewFor<CPDF_Number>("MaxLen", max_length);
+  }
+
+  // Set optional /Q (quadding/alignment)
+  if (quadding >= 0 && quadding <= 2) {
+    field_dict->SetNewFor<CPDF_Number>(pdfium::form_fields::kQ, quadding);
+  }
+
+  // Set optional /DA (default appearance)
+  if (default_appearance) {
+    field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kDA,
+                                       ByteString(default_appearance));
+  }
+
+  // Set optional /DV (default value)
+  if (default_value) {
+    // SAFETY: required from caller.
+    WideString dv_str =
+        UNSAFE_BUFFERS(WideStringFromFPDFWideString(default_value));
+    field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kDV,
+                                       dv_str.AsStringView());
+  }
 
   return field_dict;
 }
@@ -503,7 +548,13 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
                            FPDF_FORMHANDLE form_handle,
                            FPDF_BYTESTRING field_name,
                            FPDF_BYTESTRING field_type,
-                           const FS_RECTF* rect) {
+                           const FS_RECTF* rect,
+                           const FPDF_WCHAR* const* options,
+                           size_t option_count,
+                           int max_length,
+                           int quadding,
+                           FPDF_BYTESTRING default_appearance,
+                           FPDF_WIDESTRING default_value) {
   if (!page || !form_handle || !field_name || !field_type || !rect) {
     return nullptr;
   }
@@ -538,8 +589,10 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
 
   // Create form field dictionary (merged with widget annotation)
   ByteString field_name_str(field_name);
-  RetainPtr<CPDF_Dictionary> field_dict = CreateFormFieldDict(
-      pDoc, field_name_str, field_type_str, pPage, float_rect);
+  RetainPtr<CPDF_Dictionary> field_dict =
+      CreateFormFieldDict(pDoc, field_name_str, field_type_str, pPage,
+                          float_rect, options, option_count, max_length,
+                          quadding, default_appearance, default_value);
   if (!field_dict) {
     return nullptr;
   }
@@ -1848,6 +1901,233 @@ FPDFAnnot_IsOptionSelected(FPDF_FORMHANDLE handle,
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldOptionArray(FPDF_FORMHANDLE hHandle,
+                                  FPDF_ANNOTATION annot,
+                                  const FPDF_WCHAR* const* options,
+                                  size_t option_count) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  // Only allow for combo boxes and list boxes
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  // Create or clear the Opt array
+  if (option_count > 0 && options) {
+    auto opt_array = field_dict->SetNewFor<CPDF_Array>("Opt");
+    for (size_t i = 0; i < option_count; ++i) {
+      if (!options[i]) {
+        continue;  // Skip null pointers
+      }
+      // SAFETY: required from caller.
+      WideString option_text =
+          UNSAFE_BUFFERS(WideStringFromFPDFWideString(options[i]));
+      opt_array->AppendNew<CPDF_String>(option_text.AsStringView());
+    }
+  } else {
+    // Clear options by removing the Opt key
+    field_dict->RemoveFor("Opt");
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(), field_type);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldOptionArrayWithExportValues(
+    FPDF_FORMHANDLE hHandle,
+    FPDF_ANNOTATION annot,
+    const FPDF_WCHAR* const* export_values,
+    const FPDF_WCHAR* const* display_labels,
+    size_t option_count) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  // Only allow for combo boxes and list boxes
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  // Create or clear the Opt array
+  if (option_count > 0 && export_values && display_labels) {
+    auto opt_array = field_dict->SetNewFor<CPDF_Array>("Opt");
+    for (size_t i = 0; i < option_count; ++i) {
+      if (!export_values[i] || !display_labels[i]) {
+        continue;  // Skip null pointers
+      }
+      // SAFETY: required from caller.
+      WideString export_value =
+          UNSAFE_BUFFERS(WideStringFromFPDFWideString(export_values[i]));
+      WideString display_label =
+          UNSAFE_BUFFERS(WideStringFromFPDFWideString(display_labels[i]));
+
+      // Create [export_value, display_label] pair
+      auto pair_array = opt_array->AppendNew<CPDF_Array>();
+      pair_array->AppendNew<CPDF_String>(export_value.AsStringView());
+      pair_array->AppendNew<CPDF_String>(display_label.AsStringView());
+    }
+  } else {
+    // Clear options by removing the Opt key
+    field_dict->RemoveFor("Opt");
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(), field_type);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMaxLen(FPDF_FORMHANDLE hHandle,
+                             FPDF_ANNOTATION annot,
+                             int max_length) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  // Only allow for text fields
+  if (form_field->GetFieldType() != FormFieldType::kTextField) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  // Set or remove the MaxLen value
+  if (max_length > 0) {
+    field_dict->SetNewFor<CPDF_Number>("MaxLen", max_length);
+  } else {
+    field_dict->RemoveFor("MaxLen");
+  }
+
+  // No appearance regeneration needed for MaxLen
+  return true;
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMaxLen(FPDF_FORMHANDLE hHandle, FPDF_ANNOTATION annot) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return -1;
+  }
+
+  // Only allow for text fields
+  if (form_field->GetFieldType() != FormFieldType::kTextField) {
+    return -1;
+  }
+
+  return form_field->GetMaxLen();
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldQuadding(FPDF_FORMHANDLE hHandle,
+                               FPDF_ANNOTATION annot,
+                               int quadding) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  // Only allow for variable text fields
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kTextField &&
+      field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return false;
+  }
+
+  // Validate quadding value (0=left, 1=center, 2=right)
+  if (quadding < 0 || quadding > 2) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  field_dict->SetNewFor<CPDF_Number>(pdfium::form_fields::kQ, quadding);
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(), field_type);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldQuadding(FPDF_FORMHANDLE hHandle, FPDF_ANNOTATION annot) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return -1;
+  }
+
+  // Only allow for variable text fields
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kTextField &&
+      field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return -1;
+  }
+
+  // Get Q value from field dictionary
+  RetainPtr<const CPDF_Object> q_obj =
+      CPDF_FormField::GetFieldAttrForDict(form_field->GetFieldDict(), "Q");
+  if (!q_obj) {
+    return 0;  // Default is left-justified
+  }
+
+  return q_obj->GetInteger();
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_GetFontSize(FPDF_FORMHANDLE hHandle,
                       FPDF_ANNOTATION annot,
                       float* value) {
@@ -1941,6 +2221,887 @@ FPDFAnnot_GetFontColor(FPDF_FORMHANDLE hHandle,
   *G = FXSYS_GetGValue(font_color);
   *B = FXSYS_GetBValue(font_color);
   return true;
+}
+
+namespace {
+
+// Helper to get or create the MK dictionary for a widget annotation
+RetainPtr<CPDF_Dictionary> GetOrCreateMKDict(CPDF_FormField* form_field) {
+  if (!form_field) {
+    return nullptr;
+  }
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return nullptr;
+  }
+  RetainPtr<CPDF_Dictionary> mk_dict = field_dict->GetMutableDictFor("MK");
+  if (!mk_dict) {
+    mk_dict = field_dict->SetNewFor<CPDF_Dictionary>("MK");
+  }
+  return mk_dict;
+}
+
+// Helper to validate button field type
+bool IsButtonFieldType(FormFieldType field_type) {
+  return field_type == FormFieldType::kPushButton ||
+         field_type == FormFieldType::kCheckBox ||
+         field_type == FormFieldType::kRadioButton;
+}
+
+}  // namespace
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKNormalCaption(FPDF_FORMHANDLE hHandle,
+                                      FPDF_ANNOTATION annot,
+                                      FPDF_WIDESTRING caption) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  if (caption) {
+    // SAFETY: required from caller.
+    WideString caption_str =
+        UNSAFE_BUFFERS(WideStringFromFPDFWideString(caption));
+    mk_dict->SetNewFor<CPDF_String>(pdfium::appearance::kCA,
+                                    caption_str.AsStringView());
+  } else {
+    mk_dict->RemoveFor(pdfium::appearance::kCA);
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKNormalCaption(FPDF_FORMHANDLE hHandle,
+                                      FPDF_ANNOTATION annot,
+                                      FPDF_WCHAR* buffer,
+                                      unsigned long buflen) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return 0;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    return 0;
+  }
+
+  WideString caption = mk_dict->GetUnicodeTextFor(pdfium::appearance::kCA);
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      caption, UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKRolloverCaption(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_WIDESTRING caption) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  if (caption) {
+    // SAFETY: required from caller.
+    WideString caption_str =
+        UNSAFE_BUFFERS(WideStringFromFPDFWideString(caption));
+    mk_dict->SetNewFor<CPDF_String>(pdfium::appearance::kRC,
+                                    caption_str.AsStringView());
+  } else {
+    mk_dict->RemoveFor(pdfium::appearance::kRC);
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKRolloverCaption(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_WCHAR* buffer,
+                                        unsigned long buflen) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return 0;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    return 0;
+  }
+
+  WideString caption = mk_dict->GetUnicodeTextFor(pdfium::appearance::kRC);
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      caption, UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKDownCaption(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    FPDF_WIDESTRING caption) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  if (caption) {
+    // SAFETY: required from caller.
+    WideString caption_str =
+        UNSAFE_BUFFERS(WideStringFromFPDFWideString(caption));
+    mk_dict->SetNewFor<CPDF_String>(pdfium::appearance::kAC,
+                                    caption_str.AsStringView());
+  } else {
+    mk_dict->RemoveFor(pdfium::appearance::kAC);
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKDownCaption(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    FPDF_WCHAR* buffer,
+                                    unsigned long buflen) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return 0;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    return 0;
+  }
+
+  WideString caption = mk_dict->GetUnicodeTextFor(pdfium::appearance::kAC);
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      caption, UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKBorderColor(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    int color_type,
+                                    const float* components,
+                                    size_t component_count) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  // Validate color type and component count
+  // 0=transparent (no array), 1=Gray, 3=RGB, 4=CMYK
+  if (color_type == 0) {
+    // Transparent - remove the color entry
+    mk_dict->RemoveFor(pdfium::appearance::kBC);
+  } else if ((color_type == 1 && component_count == 1) ||
+             (color_type == 3 && component_count == 3) ||
+             (color_type == 4 && component_count == 4)) {
+    if (!components) {
+      return false;
+    }
+    auto color_array = mk_dict->SetNewFor<CPDF_Array>(pdfium::appearance::kBC);
+    // SAFETY: required from caller.
+    auto components_span = UNSAFE_BUFFERS(pdfium::span(components, component_count));
+    for (size_t i = 0; i < component_count; ++i) {
+      color_array->AppendNew<CPDF_Number>(components_span[i]);
+    }
+  } else {
+    return false;  // Invalid color type or component count
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKBorderColor(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    int* color_type,
+                                    float* components,
+                                    size_t component_count) {
+  if (!color_type) {
+    return false;
+  }
+
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    *color_type = 0;  // Transparent
+    return true;
+  }
+
+  RetainPtr<const CPDF_Array> color_array =
+      mk_dict->GetArrayFor(pdfium::appearance::kBC);
+  if (!color_array) {
+    *color_type = 0;  // Transparent
+    return true;
+  }
+
+  size_t array_size = color_array->size();
+  if (array_size == 1) {
+    *color_type = 1;  // Gray
+  } else if (array_size == 3) {
+    *color_type = 3;  // RGB
+  } else if (array_size == 4) {
+    *color_type = 4;  // CMYK
+  } else {
+    *color_type = 0;
+    return true;
+  }
+
+  if (components && component_count >= array_size) {
+    // SAFETY: required from caller.
+    auto components_span = UNSAFE_BUFFERS(pdfium::span(components, component_count));
+    for (size_t i = 0; i < array_size; ++i) {
+      components_span[i] = color_array->GetFloatAt(i);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKBackgroundColor(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        int color_type,
+                                        const float* components,
+                                        size_t component_count) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  // Validate color type and component count
+  // 0=transparent (no array), 1=Gray, 3=RGB, 4=CMYK
+  if (color_type == 0) {
+    // Transparent - remove the color entry
+    mk_dict->RemoveFor(pdfium::appearance::kBG);
+  } else if ((color_type == 1 && component_count == 1) ||
+             (color_type == 3 && component_count == 3) ||
+             (color_type == 4 && component_count == 4)) {
+    if (!components) {
+      return false;
+    }
+    auto color_array = mk_dict->SetNewFor<CPDF_Array>(pdfium::appearance::kBG);
+    // SAFETY: required from caller.
+    auto components_span = UNSAFE_BUFFERS(pdfium::span(components, component_count));
+    for (size_t i = 0; i < component_count; ++i) {
+      color_array->AppendNew<CPDF_Number>(components_span[i]);
+    }
+  } else {
+    return false;  // Invalid color type or component count
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKBackgroundColor(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        int* color_type,
+                                        float* components,
+                                        size_t component_count) {
+  if (!color_type) {
+    return false;
+  }
+
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    *color_type = 0;  // Transparent
+    return true;
+  }
+
+  RetainPtr<const CPDF_Array> color_array =
+      mk_dict->GetArrayFor(pdfium::appearance::kBG);
+  if (!color_array) {
+    *color_type = 0;  // Transparent
+    return true;
+  }
+
+  size_t array_size = color_array->size();
+  if (array_size == 1) {
+    *color_type = 1;  // Gray
+  } else if (array_size == 3) {
+    *color_type = 3;  // RGB
+  } else if (array_size == 4) {
+    *color_type = 4;  // CMYK
+  } else {
+    *color_type = 0;
+    return true;
+  }
+
+  if (components && component_count >= array_size) {
+    // SAFETY: required from caller.
+    auto components_span = UNSAFE_BUFFERS(pdfium::span(components, component_count));
+    for (size_t i = 0; i < array_size; ++i) {
+      components_span[i] = color_array->GetFloatAt(i);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKRotation(FPDF_FORMHANDLE hHandle,
+                                 FPDF_ANNOTATION annot,
+                                 int rotation) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  // Validate rotation (must be 0, 90, 180, or 270)
+  if (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  mk_dict->SetNewFor<CPDF_Number>(pdfium::appearance::kR, rotation);
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKRotation(FPDF_FORMHANDLE hHandle,
+                                 FPDF_ANNOTATION annot) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return -1;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return -1;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    return 0;
+  }
+
+  return mk_dict->GetIntegerFor(pdfium::appearance::kR);
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKTextPosition(FPDF_FORMHANDLE hHandle,
+                                     FPDF_ANNOTATION annot,
+                                     int position) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  // Validate position (0-6 per PDF spec)
+  if (position < 0 || position > 6) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  mk_dict->SetNewFor<CPDF_Number>("TP", position);
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKTextPosition(FPDF_FORMHANDLE hHandle,
+                                     FPDF_ANNOTATION annot) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return -1;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return -1;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    return 0;  // Default is caption only
+  }
+
+  return mk_dict->GetIntegerFor("TP");
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldMKIconFit(FPDF_FORMHANDLE hHandle,
+                                FPDF_ANNOTATION annot,
+                                int scale_when,
+                                int scale_type,
+                                float left_position,
+                                float bottom_position,
+                                FPDF_BOOL fit_bounds) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> mk_dict = GetOrCreateMKDict(form_field);
+  if (!mk_dict) {
+    return false;
+  }
+
+  // Get or create the IF (icon fit) dictionary
+  RetainPtr<CPDF_Dictionary> if_dict = mk_dict->GetMutableDictFor("IF");
+  if (!if_dict) {
+    if_dict = mk_dict->SetNewFor<CPDF_Dictionary>("IF");
+  }
+
+  // Set scale when (SW): A=always, B=bigger, S=smaller, N=never
+  const char* sw_values[] = {"A", "B", "S", "N"};
+  if (scale_when >= 0 && scale_when <= 3) {
+    if_dict->SetNewFor<CPDF_Name>("SW", sw_values[scale_when]);
+  }
+
+  // Set scale type (S): A=anamorphic (non-proportional), P=proportional
+  if (scale_type == 0) {
+    if_dict->SetNewFor<CPDF_Name>("S", "A");
+  } else if (scale_type == 1) {
+    if_dict->SetNewFor<CPDF_Name>("S", "P");
+  }
+
+  // Set position array (A)
+  auto pos_array = if_dict->SetNewFor<CPDF_Array>("A");
+  pos_array->AppendNew<CPDF_Number>(left_position);
+  pos_array->AppendNew<CPDF_Number>(bottom_position);
+
+  // Set fit bounds (FB)
+  if_dict->SetNewFor<CPDF_Boolean>("FB", !!fit_bounds);
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(),
+                                      form_field->GetFieldType());
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetFormFieldMKIconFit(FPDF_FORMHANDLE hHandle,
+                                FPDF_ANNOTATION annot,
+                                int* scale_when,
+                                int* scale_type,
+                                float* left_position,
+                                float* bottom_position,
+                                FPDF_BOOL* fit_bounds) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  if (!IsButtonFieldType(form_field->GetFieldType())) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> field_dict = form_field->GetFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  RetainPtr<const CPDF_Dictionary> mk_dict = field_dict->GetDictFor("MK");
+  if (!mk_dict) {
+    // Return defaults
+    if (scale_when) *scale_when = 0;  // Always
+    if (scale_type) *scale_type = 1;  // Proportional
+    if (left_position) *left_position = 0.5f;
+    if (bottom_position) *bottom_position = 0.5f;
+    if (fit_bounds) *fit_bounds = false;
+    return true;
+  }
+
+  RetainPtr<const CPDF_Dictionary> if_dict = mk_dict->GetDictFor("IF");
+  if (!if_dict) {
+    // Return defaults
+    if (scale_when) *scale_when = 0;  // Always
+    if (scale_type) *scale_type = 1;  // Proportional
+    if (left_position) *left_position = 0.5f;
+    if (bottom_position) *bottom_position = 0.5f;
+    if (fit_bounds) *fit_bounds = false;
+    return true;
+  }
+
+  // Parse scale when (SW)
+  if (scale_when) {
+    ByteString sw = if_dict->GetByteStringFor("SW");
+    if (sw == "B") {
+      *scale_when = 1;
+    } else if (sw == "S") {
+      *scale_when = 2;
+    } else if (sw == "N") {
+      *scale_when = 3;
+    } else {
+      *scale_when = 0;  // Default is A (always)
+    }
+  }
+
+  // Parse scale type (S)
+  if (scale_type) {
+    ByteString s = if_dict->GetByteStringFor("S");
+    if (s == "A") {
+      *scale_type = 0;  // Anamorphic
+    } else {
+      *scale_type = 1;  // Default is P (proportional)
+    }
+  }
+
+  // Parse position (A)
+  if (left_position || bottom_position) {
+    RetainPtr<const CPDF_Array> pos_array = if_dict->GetArrayFor("A");
+    if (pos_array && pos_array->size() >= 2) {
+      if (left_position) *left_position = pos_array->GetFloatAt(0);
+      if (bottom_position) *bottom_position = pos_array->GetFloatAt(1);
+    } else {
+      if (left_position) *left_position = 0.5f;
+      if (bottom_position) *bottom_position = 0.5f;
+    }
+  }
+
+  // Parse fit bounds (FB)
+  if (fit_bounds) {
+    *fit_bounds = if_dict->GetBooleanFor("FB", false);
+  }
+
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldDefaultAppearance(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        FPDF_BYTESTRING da_string) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  // Only allow for variable text fields
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kTextField &&
+      field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  if (da_string) {
+    field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kDA,
+                                       ByteString(da_string));
+  } else {
+    field_dict->RemoveFor(pdfium::form_fields::kDA);
+  }
+
+  // Regenerate appearance
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (form) {
+    RetainPtr<CPDF_Dictionary> annot_dict =
+        GetMutableAnnotDictFromFPDFAnnotation(annot);
+    if (annot_dict) {
+      CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                      annot_dict.Get(), field_type);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldDefaultAppearance(FPDF_FORMHANDLE hHandle,
+                                        FPDF_ANNOTATION annot,
+                                        char* buffer,
+                                        unsigned long buflen) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return 0;
+  }
+
+  // Only allow for variable text fields
+  FormFieldType field_type = form_field->GetFieldType();
+  if (field_type != FormFieldType::kTextField &&
+      field_type != FormFieldType::kComboBox &&
+      field_type != FormFieldType::kListBox) {
+    return 0;
+  }
+
+  RetainPtr<const CPDF_Object> da_obj =
+      CPDF_FormField::GetFieldAttrForDict(form_field->GetFieldDict(), "DA");
+  if (!da_obj) {
+    return 0;
+  }
+
+  ByteString da_string = da_obj->GetString();
+  // Copy to buffer if provided
+  unsigned long length = da_string.GetLength() + 1;  // Include null terminator
+  if (buffer && buflen >= length) {
+    // SAFETY: bounds check above.
+    memcpy(buffer, da_string.c_str(), length);
+  }
+
+  return length;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetFormFieldDefaultValue(FPDF_FORMHANDLE hHandle,
+                                   FPDF_ANNOTATION annot,
+                                   FPDF_WIDESTRING value) {
+  CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> field_dict = form_field->GetMutableFieldDict();
+  if (!field_dict) {
+    return false;
+  }
+
+  if (value) {
+    // SAFETY: required from caller.
+    WideString value_str = UNSAFE_BUFFERS(WideStringFromFPDFWideString(value));
+    field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kDV,
+                                       value_str.AsStringView());
+  } else {
+    field_dict->RemoveFor(pdfium::form_fields::kDV);
+  }
+
+  // No appearance regeneration needed for default value
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldDefaultValue(FPDF_FORMHANDLE hHandle,
+                                   FPDF_ANNOTATION annot,
+                                   FPDF_WCHAR* buffer,
+                                   unsigned long buflen) {
+  const CPDF_FormField* form_field = GetFormField(hHandle, annot);
+  if (!form_field) {
+    return 0;
+  }
+
+  WideString default_value = form_field->GetDefaultValue();
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      default_value, UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_IsChecked(FPDF_FORMHANDLE hHandle,

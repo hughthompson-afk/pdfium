@@ -4468,7 +4468,8 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotTextField) {
   // Create a text field widget annotation
   const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
   ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "MyTextField", "Tx", &rect));
+      page.get(), form_handle(), "MyTextField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot);
 
   // Verify it's a widget annotation
@@ -4510,7 +4511,8 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotCheckbox) {
 
   const FS_RECTF rect = {100.0f, 700.0f, 120.0f, 720.0f};
   ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "MyCheckbox", "Btn", &rect));
+      page.get(), form_handle(), "MyCheckbox", "Btn", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot);
 
   EXPECT_EQ(FPDF_ANNOT_WIDGET, FPDFAnnot_GetSubtype(annot.get()));
@@ -4528,7 +4530,8 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotChoiceField) {
 
   const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
   ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "MyChoiceField", "Ch", &rect));
+      page.get(), form_handle(), "MyChoiceField", "Ch", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot);
 
   EXPECT_EQ(FPDF_ANNOT_WIDGET, FPDFAnnot_GetSubtype(annot.get()));
@@ -4548,27 +4551,33 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotInvalidParams) {
 
   // Null page
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(nullptr, form_handle(), "Field",
-                                          "Tx", &rect));
+                                          "Tx", &rect, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 
   // Null form handle
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(page.get(), nullptr, "Field", "Tx",
-                                          &rect));
+                                          &rect, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 
   // Null field name
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(page.get(), form_handle(), nullptr,
-                                          "Tx", &rect));
+                                          "Tx", &rect, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 
   // Null field type
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(page.get(), form_handle(), "Field",
-                                          nullptr, &rect));
+                                          nullptr, &rect, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 
   // Null rect
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(page.get(), form_handle(), "Field",
-                                          "Tx", nullptr));
+                                          "Tx", nullptr, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 
   // Invalid field type
   EXPECT_FALSE(FPDFPage_CreateWidgetAnnot(page.get(), form_handle(), "Field",
-                                          "Invalid", &rect));
+                                          "Invalid", &rect, nullptr, 0, -1, -1,
+                                          nullptr, nullptr));
 }
 
 TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotMultipleFields) {
@@ -4583,17 +4592,20 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotMultipleFields) {
   // Create multiple widget annotations
   const FS_RECTF rect1 = {100.0f, 700.0f, 200.0f, 720.0f};
   ScopedFPDFAnnotation annot1(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "Field1", "Tx", &rect1));
+      page.get(), form_handle(), "Field1", "Tx", &rect1,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot1);
 
   const FS_RECTF rect2 = {100.0f, 650.0f, 200.0f, 670.0f};
   ScopedFPDFAnnotation annot2(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "Field2", "Tx", &rect2));
+      page.get(), form_handle(), "Field2", "Tx", &rect2,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot2);
 
   const FS_RECTF rect3 = {100.0f, 600.0f, 120.0f, 620.0f};
   ScopedFPDFAnnotation annot3(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "Checkbox1", "Btn", &rect3));
+      page.get(), form_handle(), "Checkbox1", "Btn", &rect3,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot3);
 
   // Verify all annotations are present
@@ -4616,7 +4628,8 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotFormFieldAPIs) {
 
   const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
   ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
-      page.get(), form_handle(), "TestField", "Tx", &rect));
+      page.get(), form_handle(), "TestField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
   ASSERT_TRUE(annot);
 
   // Test that existing form field APIs work on the created widget
@@ -4636,4 +4649,255 @@ TEST_F(FPDFAnnotEmbedderTest, CreateWidgetAnnotFormFieldAPIs) {
   // Note: FPDFAnnot_SetFormFieldValue doesn't exist, but we can test
   // that the widget is recognized by the form system
   EXPECT_EQ(6, FPDFAnnot_GetFormFieldType(form_handle(), annot.get()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, CreateWidgetWithMaxLenAndQuadding) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "LimitedField", "Tx", &rect,
+      nullptr, 0, 50, 1, "/Helv 12 Tf 0 0 0 rg", nullptr));
+  ASSERT_TRUE(annot);
+
+  // Verify max length was set
+  EXPECT_EQ(50, FPDFAnnot_GetFormFieldMaxLen(form_handle(), annot.get()));
+
+  // Verify quadding was set
+  EXPECT_EQ(1, FPDFAnnot_GetFormFieldQuadding(form_handle(), annot.get()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, CreateWidgetWithOptions) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  // Create options array
+  static const wchar_t kOption1[] = L"Red";
+  static const wchar_t kOption2[] = L"Green";
+  static const wchar_t kOption3[] = L"Blue";
+  ScopedFPDFWideString opt1 = GetFPDFWideString(kOption1);
+  ScopedFPDFWideString opt2 = GetFPDFWideString(kOption2);
+  ScopedFPDFWideString opt3 = GetFPDFWideString(kOption3);
+  const FPDF_WCHAR* options[] = {opt1.get(), opt2.get(), opt3.get()};
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "ColorChoice", "Ch", &rect,
+      options, 3, -1, -1, "/Helv 10 Tf 0 0 0 rg", nullptr));
+  ASSERT_TRUE(annot);
+
+  // Verify options were set
+  EXPECT_EQ(3, FPDFAnnot_GetOptionCount(form_handle(), annot.get()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldDefaultAppearance) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "TextField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Set default appearance
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldDefaultAppearance(
+      form_handle(), annot.get(), "/Helv 12 Tf 0 0 0 rg"));
+
+  // Get default appearance
+  char buffer[100];
+  unsigned long length = FPDFAnnot_GetFormFieldDefaultAppearance(
+      form_handle(), annot.get(), buffer, sizeof(buffer));
+  EXPECT_GT(length, 0u);
+  EXPECT_STREQ("/Helv 12 Tf 0 0 0 rg", buffer);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldDefaultValue) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "TextField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Set default value
+  static const wchar_t kDefaultValue[] = L"Default Text";
+  ScopedFPDFWideString default_value = GetFPDFWideString(kDefaultValue);
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldDefaultValue(
+      form_handle(), annot.get(), default_value.get()));
+
+  // Get default value
+  unsigned long length = FPDFAnnot_GetFormFieldDefaultValue(
+      form_handle(), annot.get(), nullptr, 0);
+  EXPECT_GT(length, 0u);
+  std::vector<FPDF_WCHAR> buffer = GetFPDFWideStringBuffer(length);
+  EXPECT_EQ(length,
+            FPDFAnnot_GetFormFieldDefaultValue(form_handle(), annot.get(),
+                                               buffer.data(), length));
+  EXPECT_EQ(L"Default Text", GetPlatformWString(buffer.data()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldMaxLen) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "TextField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Set max length
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldMaxLen(form_handle(), annot.get(), 100));
+
+  // Get max length
+  EXPECT_EQ(100, FPDFAnnot_GetFormFieldMaxLen(form_handle(), annot.get()));
+
+  // Clear max length
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldMaxLen(form_handle(), annot.get(), 0));
+  EXPECT_EQ(0, FPDFAnnot_GetFormFieldMaxLen(form_handle(), annot.get()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldMKCaption) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "Button", "Btn", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Set normal caption
+  static const wchar_t kCaption[] = L"Click Me";
+  ScopedFPDFWideString caption = GetFPDFWideString(kCaption);
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldMKNormalCaption(
+      form_handle(), annot.get(), caption.get()));
+
+  // Get normal caption
+  unsigned long length = FPDFAnnot_GetFormFieldMKNormalCaption(
+      form_handle(), annot.get(), nullptr, 0);
+  EXPECT_GT(length, 0u);
+  std::vector<FPDF_WCHAR> buffer = GetFPDFWideStringBuffer(length);
+  EXPECT_EQ(length,
+            FPDFAnnot_GetFormFieldMKNormalCaption(form_handle(), annot.get(),
+                                                  buffer.data(), length));
+  EXPECT_EQ(L"Click Me", GetPlatformWString(buffer.data()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldMKRotation) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "Button", "Btn", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Default should be 0
+  EXPECT_EQ(0, FPDFAnnot_GetFormFieldMKRotation(form_handle(), annot.get()));
+
+  // Set rotation to 90
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldMKRotation(form_handle(), annot.get(), 90));
+  EXPECT_EQ(90, FPDFAnnot_GetFormFieldMKRotation(form_handle(), annot.get()));
+
+  // Set rotation to 180
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldMKRotation(form_handle(), annot.get(), 180));
+  EXPECT_EQ(180, FPDFAnnot_GetFormFieldMKRotation(form_handle(), annot.get()));
+
+  // Invalid rotation
+  EXPECT_FALSE(FPDFAnnot_SetFormFieldMKRotation(form_handle(), annot.get(), 45));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldOptionArray) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "ChoiceField", "Ch", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Create options array
+  static const wchar_t kOption1[] = L"Apple";
+  static const wchar_t kOption2[] = L"Banana";
+  static const wchar_t kOption3[] = L"Cherry";
+  ScopedFPDFWideString opt1 = GetFPDFWideString(kOption1);
+  ScopedFPDFWideString opt2 = GetFPDFWideString(kOption2);
+  ScopedFPDFWideString opt3 = GetFPDFWideString(kOption3);
+
+  const FPDF_WCHAR* options[] = {opt1.get(), opt2.get(), opt3.get()};
+
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldOptionArray(
+      form_handle(), annot.get(), options, 3));
+
+  // Verify options were set
+  EXPECT_EQ(3, FPDFAnnot_GetOptionCount(form_handle(), annot.get()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetFormFieldQuadding) {
+  CreateEmptyDocument();
+  ASSERT_TRUE(document());
+  ASSERT_TRUE(FPDF_EnsureAcroForm(document()));
+
+  ScopedFPDFPage page(FPDFPage_New(document(), 0, 612, 792));
+  ASSERT_TRUE(page);
+
+  const FS_RECTF rect = {100.0f, 700.0f, 200.0f, 720.0f};
+  ScopedFPDFAnnotation annot(FPDFPage_CreateWidgetAnnot(
+      page.get(), form_handle(), "TextField", "Tx", &rect,
+      nullptr, 0, -1, -1, nullptr, nullptr));
+  ASSERT_TRUE(annot);
+
+  // Default should be left-aligned
+  EXPECT_EQ(0, FPDFAnnot_GetFormFieldQuadding(form_handle(), annot.get()));
+
+  // Set center alignment
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldQuadding(form_handle(), annot.get(), 1));
+  EXPECT_EQ(1, FPDFAnnot_GetFormFieldQuadding(form_handle(), annot.get()));
+
+  // Set right alignment
+  EXPECT_TRUE(FPDFAnnot_SetFormFieldQuadding(form_handle(), annot.get(), 2));
+  EXPECT_EQ(2, FPDFAnnot_GetFormFieldQuadding(form_handle(), annot.get()));
+
+  // Invalid quadding value
+  EXPECT_FALSE(FPDFAnnot_SetFormFieldQuadding(form_handle(), annot.get(), 3));
+  EXPECT_FALSE(FPDFAnnot_SetFormFieldQuadding(form_handle(), annot.get(), -1));
 }
