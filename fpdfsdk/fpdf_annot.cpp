@@ -481,6 +481,75 @@ bool AddFieldToAcroForm(RetainPtr<CPDF_Dictionary> acro_form,
   return true;
 }
 
+// Helper to convert FormFieldType to CPDF_GenerateAP::FormType.
+// Returns nullopt for field types that don't support form AP generation.
+std::optional<CPDF_GenerateAP::FormType> FormFieldTypeToFormType(
+    FormFieldType field_type) {
+  switch (field_type) {
+    case FormFieldType::kTextField:
+      return CPDF_GenerateAP::kTextField;
+    case FormFieldType::kComboBox:
+      return CPDF_GenerateAP::kComboBox;
+    case FormFieldType::kListBox:
+      return CPDF_GenerateAP::kListBox;
+    default:
+      return std::nullopt;
+  }
+}
+
+// Helper to regenerate form appearance if applicable.
+void MaybeRegenerateFormAP(FPDF_FORMHANDLE hHandle,
+                           FPDF_ANNOTATION annot,
+                           FormFieldType field_type) {
+  auto form_type = FormFieldTypeToFormType(field_type);
+  if (!form_type.has_value()) {
+    return;  // Button fields etc. don't use GenerateFormAP
+  }
+
+  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
+  if (!form) {
+    return;
+  }
+
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (annot_dict) {
+    CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
+                                    annot_dict.Get(), form_type.value());
+  }
+}
+
+// Helper to clear existing appearance for button fields so viewer regenerates.
+void ClearButtonAppearance(FPDF_ANNOTATION annot) {
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (annot_dict) {
+    // Remove the appearance stream. The PDF viewer will regenerate it.
+    annot_dict->RemoveFor(pdfium::annotation::kAP);
+  }
+}
+
+// Helper to get or create the MK dictionary from annotation dict
+RetainPtr<CPDF_Dictionary> GetOrCreateMKDict(FPDF_ANNOTATION annot) {
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      GetMutableAnnotDictFromFPDFAnnotation(annot);
+  if (!annot_dict) {
+    return nullptr;
+  }
+  RetainPtr<CPDF_Dictionary> mk_dict = annot_dict->GetMutableDictFor("MK");
+  if (!mk_dict) {
+    mk_dict = annot_dict->SetNewFor<CPDF_Dictionary>("MK");
+  }
+  return mk_dict;
+}
+
+// Helper to validate button field type
+bool IsButtonFieldType(FormFieldType field_type) {
+  return field_type == FormFieldType::kPushButton ||
+         field_type == FormFieldType::kCheckBox ||
+         field_type == FormFieldType::kRadioButton;
+}
+
 }  // namespace
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -2203,79 +2272,6 @@ FPDFAnnot_GetFontColor(FPDF_FORMHANDLE hHandle,
   *B = FXSYS_GetBValue(font_color);
   return true;
 }
-
-namespace {
-
-// Helper to convert FormFieldType to CPDF_GenerateAP::FormType.
-// Returns nullopt for field types that don't support form AP generation.
-std::optional<CPDF_GenerateAP::FormType> FormFieldTypeToFormType(
-    FormFieldType field_type) {
-  switch (field_type) {
-    case FormFieldType::kTextField:
-      return CPDF_GenerateAP::kTextField;
-    case FormFieldType::kComboBox:
-      return CPDF_GenerateAP::kComboBox;
-    case FormFieldType::kListBox:
-      return CPDF_GenerateAP::kListBox;
-    default:
-      return std::nullopt;
-  }
-}
-
-// Helper to regenerate form appearance if applicable.
-void MaybeRegenerateFormAP(FPDF_FORMHANDLE hHandle,
-                           FPDF_ANNOTATION annot,
-                           FormFieldType field_type) {
-  auto form_type = FormFieldTypeToFormType(field_type);
-  if (!form_type.has_value()) {
-    return;  // Button fields etc. don't use GenerateFormAP
-  }
-
-  CPDFSDK_InteractiveForm* form = FormHandleToInteractiveForm(hHandle);
-  if (!form) {
-    return;
-  }
-
-  RetainPtr<CPDF_Dictionary> annot_dict =
-      GetMutableAnnotDictFromFPDFAnnotation(annot);
-  if (annot_dict) {
-    CPDF_GenerateAP::GenerateFormAP(form->GetInteractiveForm()->document(),
-                                    annot_dict.Get(), form_type.value());
-  }
-}
-
-// Helper to clear existing appearance for button fields so viewer regenerates.
-void ClearButtonAppearance(FPDF_ANNOTATION annot) {
-  RetainPtr<CPDF_Dictionary> annot_dict =
-      GetMutableAnnotDictFromFPDFAnnotation(annot);
-  if (annot_dict) {
-    // Remove the appearance stream. The PDF viewer will regenerate it.
-    annot_dict->RemoveFor(pdfium::annotation::kAP);
-  }
-}
-
-// Helper to get or create the MK dictionary from annotation dict
-RetainPtr<CPDF_Dictionary> GetOrCreateMKDict(FPDF_ANNOTATION annot) {
-  RetainPtr<CPDF_Dictionary> annot_dict =
-      GetMutableAnnotDictFromFPDFAnnotation(annot);
-  if (!annot_dict) {
-    return nullptr;
-  }
-  RetainPtr<CPDF_Dictionary> mk_dict = annot_dict->GetMutableDictFor("MK");
-  if (!mk_dict) {
-    mk_dict = annot_dict->SetNewFor<CPDF_Dictionary>("MK");
-  }
-  return mk_dict;
-}
-
-// Helper to validate button field type
-bool IsButtonFieldType(FormFieldType field_type) {
-  return field_type == FormFieldType::kPushButton ||
-         field_type == FormFieldType::kCheckBox ||
-         field_type == FormFieldType::kRadioButton;
-}
-
-}  // namespace
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_SetFormFieldMKNormalCaption(FPDF_FORMHANDLE hHandle,
