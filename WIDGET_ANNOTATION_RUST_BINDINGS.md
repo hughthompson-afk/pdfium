@@ -49,6 +49,10 @@ FPDF_ANNOTATION FPDFPage_CreateWidgetAnnot(
     FPDF_BYTESTRING field_name,
     FPDF_BYTESTRING field_type,
     const FS_RECTF* rect,
+    int field_flags,                        // For /Ff: Use FPDF_FORMFLAG_* constants
+                                            // For buttons: FPDF_FORMFLAG_BTN_RADIO for radio,
+                                            // FPDF_FORMFLAG_BTN_PUSHBUTTON for push button,
+                                            // 0 for checkbox
     const FPDF_WCHAR* const* options,      // For /Opt (choice fields), NULL to skip
     size_t option_count,                    // Number of options
     int max_length,                         // For /MaxLen (-1 to skip)
@@ -282,6 +286,7 @@ fn FPDFPage_CreateWidgetAnnot(
     field_name: FPDF_BYTESTRING,
     field_type: FPDF_BYTESTRING,
     rect: *const FS_RECTF,
+    field_flags: c_int,
     options: *const *const FPDF_WCHAR,
     option_count: usize,
     max_length: c_int,
@@ -596,6 +601,7 @@ fn FPDFPage_CreateWidgetAnnot(
     field_name: FPDF_BYTESTRING,
     field_type: FPDF_BYTESTRING,
     rect: *const FS_RECTF,
+    field_flags: c_int,
     options: *const *const FPDF_WCHAR,
     option_count: usize,
     max_length: c_int,
@@ -606,7 +612,7 @@ fn FPDFPage_CreateWidgetAnnot(
     unsafe {
         ffi::FPDFPage_CreateWidgetAnnot(
             page, form_handle, field_name, field_type, rect,
-            options, option_count, max_length, quadding,
+            field_flags, options, option_count, max_length, quadding,
             default_appearance, default_value,
         )
     }
@@ -1069,6 +1075,10 @@ impl PdfPageWidgetAnnotation<'_> {
 /// Options for creating a widget annotation
 #[derive(Debug, Clone, Default)]
 pub struct WidgetCreationOptions<'a> {
+    /// Field flags (/Ff key). Use FPDF_FORMFLAG_* constants.
+    /// For buttons: FPDF_FORMFLAG_BTN_RADIO for radio buttons,
+    /// FPDF_FORMFLAG_BTN_PUSHBUTTON for push buttons, 0 for checkboxes.
+    pub field_flags: i32,
     /// Options for choice fields (combo/list box)
     pub options: Option<&'a [&'a str]>,
     /// Maximum text length for text fields
@@ -1124,6 +1134,7 @@ impl PdfPage {
             field_name_cstr.as_ptr(),
             field_type_cstr.as_ptr(),
             &fs_rect,
+            options.field_flags,
             option_ptrs.as_ref().map(|v| v.as_ptr()).unwrap_or(std::ptr::null()),
             option_ptrs.as_ref().map(|v| v.len()).unwrap_or(0),
             options.max_length.unwrap_or(-1),

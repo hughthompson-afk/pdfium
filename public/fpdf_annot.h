@@ -82,6 +82,13 @@ extern "C" {
 #define FPDF_FORMFLAG_CHOICE_EDIT (1 << 18)
 #define FPDF_FORMFLAG_CHOICE_MULTI_SELECT (1 << 21)
 
+// Refer to PDF Reference version 1.7 table 8.75 for field flags specific to
+// interactive form button fields.
+#define FPDF_FORMFLAG_BTN_NOTOGGLETOOFF (1 << 14)
+#define FPDF_FORMFLAG_BTN_RADIO (1 << 15)
+#define FPDF_FORMFLAG_BTN_PUSHBUTTON (1 << 16)
+#define FPDF_FORMFLAG_BTN_RADIOSINUNISON (1 << 25)
+
 // Additional actions type of form field:
 //   K, on key stroke, JavaScript action.
 //   F, on format, JavaScript action.
@@ -206,6 +213,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_EnsureAcroForm(FPDF_DOCUMENT document);
 //   field_type         - The field type (/FT key): "Tx" (text), "Btn" (button),
 //                        "Ch" (choice), or "Sig" (signature).
 //   rect               - Bounding rectangle for the widget annotation.
+//   field_flags        - Field flags (/Ff key). Use FPDF_FORMFLAG_* constants.
+//                        For buttons: use FPDF_FORMFLAG_BTN_RADIO for radio
+//                        buttons, FPDF_FORMFLAG_BTN_PUSHBUTTON for push buttons,
+//                        or 0 for checkboxes.
 //   options            - Optional: array of option strings for choice fields
 //                        (NULL to skip). Each string is UTF-16LE encoded.
 //   option_count       - Number of options in the array (0 to skip).
@@ -225,6 +236,7 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
                            FPDF_BYTESTRING field_name,
                            FPDF_BYTESTRING field_type,
                            const FS_RECTF* rect,
+                           int field_flags,
                            const FPDF_WCHAR* const* options,
                            size_t option_count,
                            int max_length,

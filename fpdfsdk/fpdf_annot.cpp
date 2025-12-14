@@ -404,6 +404,7 @@ RetainPtr<CPDF_Dictionary> CreateFormFieldDict(
     const ByteString& field_type,
     CPDF_Page* page,
     const CFX_FloatRect& rect,
+    int field_flags,
     const FPDF_WCHAR* const* options,
     size_t option_count,
     int max_length,
@@ -416,6 +417,10 @@ RetainPtr<CPDF_Dictionary> CreateFormFieldDict(
   // Set required keys
   field_dict->SetNewFor<CPDF_Name>(pdfium::form_fields::kFT, field_type);
   field_dict->SetNewFor<CPDF_String>(pdfium::form_fields::kT, field_name);
+
+  // Set field flags (/Ff) - critical for determining button subtypes
+  // (radio vs checkbox vs pushbutton) and other field-specific behaviors.
+  field_dict->SetNewFor<CPDF_Number>(pdfium::form_fields::kFf, field_flags);
 
   // Set rect and page reference (for merged dictionary case)
   field_dict->SetRectFor(pdfium::annotation::kRect, rect);
@@ -619,6 +624,7 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
                            FPDF_BYTESTRING field_name,
                            FPDF_BYTESTRING field_type,
                            const FS_RECTF* rect,
+                           int field_flags,
                            const FPDF_WCHAR* const* options,
                            size_t option_count,
                            int max_length,
@@ -661,8 +667,9 @@ FPDFPage_CreateWidgetAnnot(FPDF_PAGE page,
   ByteString field_name_str(field_name);
   RetainPtr<CPDF_Dictionary> field_dict =
       CreateFormFieldDict(pDoc, field_name_str, field_type_str, pPage,
-                          float_rect, options, option_count, max_length,
-                          quadding, default_appearance, default_value);
+                          float_rect, field_flags, options, option_count,
+                          max_length, quadding, default_appearance,
+                          default_value);
   if (!field_dict) {
     return nullptr;
   }
