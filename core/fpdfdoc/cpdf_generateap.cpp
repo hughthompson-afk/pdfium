@@ -706,12 +706,13 @@ ByteString GenerateTextSymbolAP(const CFX_FloatRect& rect) {
 
 RetainPtr<CPDF_Dictionary> GenerateExtGStateDict(
     const CPDF_Dictionary& annot_dict,
-    const ByteString& blend_mode) {
+    const ByteString& blend_mode,
+    float default_opacity = 1.0f) {
   auto gs_dict =
       pdfium::MakeRetain<CPDF_Dictionary>(annot_dict.GetByteStringPool());
   gs_dict->SetNewFor<CPDF_Name>("Type", "ExtGState");
 
-  float opacity = annot_dict.KeyExist("CA") ? annot_dict.GetFloatFor("CA") : 1;
+  float opacity = annot_dict.KeyExist("CA") ? annot_dict.GetFloatFor("CA") : default_opacity;
   gs_dict->SetNewFor<CPDF_Number>("CA", opacity);
   gs_dict->SetNewFor<CPDF_Number>("ca", opacity);
   gs_dict->SetNewFor<CPDF_Boolean>("AIS", false);
@@ -1156,7 +1157,8 @@ bool GenerateHighlightAP(CPDF_Document* doc, CPDF_Dictionary* annot_dict) {
     }
   }
 
-  auto gs_dict = GenerateExtGStateDict(*annot_dict, "Multiply");
+  // Use 0.3 (30% opacity) as default for highlight annotations per PDF spec
+  auto gs_dict = GenerateExtGStateDict(*annot_dict, "Multiply", 0.3f);
   auto resources_dict = GenerateResourcesDict(doc, std::move(gs_dict), nullptr);
   GenerateAndSetAPDict(doc, annot_dict, &app_stream, std::move(resources_dict),
                        true /*IsTextMarkupAnnotation*/);
