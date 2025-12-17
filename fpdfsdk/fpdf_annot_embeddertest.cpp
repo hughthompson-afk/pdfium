@@ -1710,6 +1710,104 @@ TEST_F(FPDFAnnotEmbedderTest, GetNumberValue) {
   }
 }
 
+TEST_F(FPDFAnnotEmbedderTest, GetSetNumberValue) {
+  // Create a new document with a highlight annotation.
+  CreateNewDocument();
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Create a highlight annotation.
+    ScopedFPDFAnnotation annot(
+        FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_HIGHLIGHT));
+    ASSERT_TRUE(annot);
+
+    // Test basic functionality - set and get a number value.
+    const char kTestKey[] = "TestNumber";
+    EXPECT_FALSE(FPDFAnnot_HasKey(annot.get(), kTestKey));
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), kTestKey, 42.5f));
+    EXPECT_TRUE(FPDFAnnot_HasKey(annot.get(), kTestKey));
+    EXPECT_EQ(FPDF_OBJECT_NUMBER,
+              FPDFAnnot_GetValueType(annot.get(), kTestKey));
+
+    float value;
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), kTestKey, &value));
+    EXPECT_FLOAT_EQ(42.5f, value);
+
+    // Test overwriting existing value.
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), kTestKey, 99.9f));
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), kTestKey, &value));
+    EXPECT_FLOAT_EQ(99.9f, value);
+
+    // Test setting opacity values for highlight annotation.
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), "ca", 0.75f));  // Fill opacity
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), "CA", 0.5f));   // Stroke opacity
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), "ca", &value));
+    EXPECT_FLOAT_EQ(0.75f, value);
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), "CA", &value));
+    EXPECT_FLOAT_EQ(0.5f, value);
+
+    // Test invalid inputs.
+    EXPECT_FALSE(FPDFAnnot_SetNumberValue(nullptr, kTestKey, 1.0f));
+    EXPECT_FALSE(FPDFAnnot_SetNumberValue(annot.get(), nullptr, 1.0f));
+    // Note: Function doesn't validate value range, only key null check
+
+    // Test edge cases.
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), "zero", 0.0f));
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), "negative", -1.5f));
+    EXPECT_TRUE(FPDFAnnot_SetNumberValue(annot.get(), "large", 123456.789f));
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), "zero", &value));
+    EXPECT_FLOAT_EQ(0.0f, value);
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), "negative", &value));
+    EXPECT_FLOAT_EQ(-1.5f, value);
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(annot.get(), "large", &value));
+    EXPECT_FLOAT_EQ(123456.789f, value);
+  }
+
+  // Save the document and close the page.
+  EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
+
+  {
+    ScopedSavedDoc saved_doc = OpenScopedSavedDocument();
+    ASSERT_TRUE(saved_doc);
+    ScopedSavedPage saved_page = LoadScopedSavedPage(0);
+    ASSERT_TRUE(saved_page);
+
+    ScopedFPDFAnnotation saved_annot(FPDFPage_GetAnnot(saved_page.get(), 0));
+    ASSERT_TRUE(saved_annot);
+
+    // Verify saved values persist.
+    float value;
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "TestNumber", &value));
+    EXPECT_FLOAT_EQ(99.9f, value);  // The overwritten value
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "ca", &value));
+    EXPECT_FLOAT_EQ(0.75f, value);
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "CA", &value));
+    EXPECT_FLOAT_EQ(0.5f, value);
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "zero", &value));
+    EXPECT_FLOAT_EQ(0.0f, value);
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "negative", &value));
+    EXPECT_FLOAT_EQ(-1.5f, value);
+
+    EXPECT_TRUE(FPDFAnnot_GetNumberValue(saved_annot.get(), "large", &value));
+    EXPECT_FLOAT_EQ(123456.789f, value);
+
+    // Verify types are preserved.
+    EXPECT_EQ(FPDF_OBJECT_NUMBER,
+              FPDFAnnot_GetValueType(saved_annot.get(), "TestNumber"));
+    EXPECT_EQ(FPDF_OBJECT_NUMBER,
+              FPDFAnnot_GetValueType(saved_annot.get(), "ca"));
+    EXPECT_EQ(FPDF_OBJECT_NUMBER,
+              FPDFAnnot_GetValueType(saved_annot.get(), "CA"));
+  }
+}
+
 TEST_F(FPDFAnnotEmbedderTest, GetSetBSWidth) {
   // Create a new document with a line annotation.
   CreateNewDocument();

@@ -794,6 +794,21 @@ FPDFAnnot_GetNumberValue(FPDF_ANNOTATION annot,
                          float* value);
 
 // Experimental API.
+// Set the float value corresponding to |key| in |annot|'s dictionary,
+// overwriting the existing value if any. The value type would be
+// FPDF_OBJECT_NUMBER after this function call succeeds.
+//
+//   annot  - handle to an annotation.
+//   key    - the key to the dictionary entry to be set, encoded in UTF-8.
+//   value  - the float value to be set.
+//
+// Returns true if successful.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetNumberValue(FPDF_ANNOTATION annot,
+                         FPDF_BYTESTRING key,
+                         float value);
+
+// Experimental API.
 // Set the AP (appearance string) in |annot|'s dictionary for a given
 // |appearanceMode|.
 //
