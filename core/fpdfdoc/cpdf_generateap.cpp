@@ -712,7 +712,15 @@ RetainPtr<CPDF_Dictionary> GenerateExtGStateDict(
       pdfium::MakeRetain<CPDF_Dictionary>(annot_dict.GetByteStringPool());
   gs_dict->SetNewFor<CPDF_Name>("Type", "ExtGState");
 
-  float opacity = annot_dict.KeyExist("CA") ? annot_dict.GetFloatFor("CA") : default_opacity;
+  // Check both CA (stroke opacity) and ca (fill opacity). For fill operations
+  // like highlights, ca is the relevant value. Prefer CA if both exist,
+  // otherwise use whichever is present, or default_opacity if neither exists.
+  float opacity = default_opacity;
+  if (annot_dict.KeyExist("CA")) {
+    opacity = annot_dict.GetFloatFor("CA");
+  } else if (annot_dict.KeyExist("ca")) {
+    opacity = annot_dict.GetFloatFor("ca");
+  }
   gs_dict->SetNewFor<CPDF_Number>("CA", opacity);
   gs_dict->SetNewFor<CPDF_Number>("ca", opacity);
   gs_dict->SetNewFor<CPDF_Boolean>("AIS", false);

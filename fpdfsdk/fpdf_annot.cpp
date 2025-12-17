@@ -269,9 +269,19 @@ RetainPtr<CPDF_Dictionary> SetExtGStateInResourceDict(
   // ExtGState represents a graphics state parameter dictionary.
   pGSDict->SetNewFor<CPDF_Name>("Type", "ExtGState");
 
-  // CA respresents current stroking alpha specifying constant opacity
+  // CA represents current stroking alpha specifying constant opacity
   // value that should be used in transparent imaging model.
-  float fOpacity = pAnnotDict->GetFloatFor("CA");
+  // ca represents fill color alpha specifying constant opacity
+  // value that should be used in transparent imaging model.
+  // Check both CA (stroke) and ca (fill) opacity. For fill operations
+  // like highlights, ca is the relevant value. Prefer CA if both exist,
+  // otherwise use whichever is present.
+  float fOpacity = 1.0f;
+  if (pAnnotDict->KeyExist("CA")) {
+    fOpacity = pAnnotDict->GetFloatFor("CA");
+  } else if (pAnnotDict->KeyExist("ca")) {
+    fOpacity = pAnnotDict->GetFloatFor("ca");
+  }
 
   pGSDict->SetNewFor<CPDF_Number>("CA", fOpacity);
 
@@ -1737,7 +1747,20 @@ FPDFAnnot_SetAP(FPDF_ANNOTATION annot,
   // checking for value < 1 and not <= 1 so that the output PDF size does not
   // unnecessarily bloat up by creating a new dictionary in case of solid
   // color.
-  if (pAnnotDict->KeyExist("CA") && pAnnotDict->GetFloatFor("CA") < 1.0f) {
+  // Check both CA (stroke opacity) and ca (fill opacity). For fill operations
+  // like highlights, ca is the relevant value. Create ExtGState resources if
+  // either opacity value is less than 1.0. Prefer CA if both exist (for
+  // backward compatibility), otherwise use whichever is present.
+  float fOpacity = 1.0f;
+  bool shouldCreateExtGState = false;
+  if (pAnnotDict->KeyExist("CA")) {
+    fOpacity = pAnnotDict->GetFloatFor("CA");
+    shouldCreateExtGState = fOpacity < 1.0f;
+  } else if (pAnnotDict->KeyExist("ca")) {
+    fOpacity = pAnnotDict->GetFloatFor("ca");
+    shouldCreateExtGState = fOpacity < 1.0f;
+  }
+  if (shouldCreateExtGState) {
     stream_dict->SetFor("Resources", SetExtGStateInResourceDict(
                                          doc, pAnnotDict.Get(), "Normal"));
   }
